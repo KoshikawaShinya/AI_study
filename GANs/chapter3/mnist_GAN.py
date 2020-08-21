@@ -4,33 +4,6 @@ from tensorflow.python import keras as K
 from tensorflow.python.keras.datasets import mnist
 
 
-def main():
-    img_rows = 28
-    img_cols = 28
-    channels = 1
-    # 生成器の入力として使われるノイズベクトルの次元
-    z_dim = 100
-    losses = []
-    accuracies = []
-    iteration_checkpoints = []
-
-    # 入力画像の次元
-    img_shape = (img_rows, img_cols, channels)
-
-    # 識別器の構築とコンパイル
-    discriminator = build_discriminator(img_shape)
-    discriminator.compile(optimizer=K.optimizers.Adam, loss='binary_crossentropy', metrics=['accuracy'])
-
-    # 生成器の構築
-    generator = build_generator(img_shape, z_dim)
-
-    # 生成器の構築中は識別器のパラメータを固定
-    discriminator.trainable = False
-
-    # 生成器の訓練のため、識別機は固定し、GANモデルの構築とコンパイルを行う
-    gan = build_gan(generator, discriminator)
-    gan.compile(loss='binary_crossentropy', optimizer=Adam())
-
 
 
 # 生成器
@@ -96,7 +69,7 @@ def train(iterations, batch_size, sample_interval):
         #----------------------
 
         # 本物の画像をランダムに取り出したバッチを作る(0以上画像の枚数未満)
-        idx = np.random.randomint(0, X_train.shape[0], batch_size)
+        idx = np.random.randint(0, X_train.shape[0], batch_size)
         imgs = X_train[idx]
 
         # 偽の画像のバッチを生成する
@@ -153,6 +126,42 @@ def sample_images(generator, image_grid_rows=4, image_grid_columns=4):
     for i in range(image_grid_rows):
         for j in range(image_grid_columns):
             # 並べた画像を出力
-            axs[i, j].imshow(gen_imgs[cnt, :, :, 0], cmap='gray')
+            axs[i, j].imshow(gen_imgs[count, :, :, 0], cmap='gray')
             axs[i, j].axis('off')
             count += 1
+    plt.show()
+
+
+img_rows = 28
+img_cols = 28
+channels = 1
+# 生成器の入力として使われるノイズベクトルの次元
+z_dim = 100
+# ハイパーパラメータ
+iterations = 30000
+batch_size = 128
+sample_interval = 1000
+
+losses = []
+accuracies = []
+iteration_checkpoints = []
+
+# 入力画像の次元
+img_shape = (img_rows, img_cols, channels)
+
+# 識別器の構築とコンパイル
+discriminator = build_discriminator(img_shape)
+discriminator.compile(optimizer=K.optimizers.Adam(), loss='binary_crossentropy', metrics=['accuracy'])
+
+# 生成器の構築
+generator = build_generator(img_shape, z_dim)
+
+# 生成器の構築中は識別器のパラメータを固定
+discriminator.trainable = False
+
+# 生成器の訓練のため、識別機は固定し、GANモデルの構築とコンパイルを行う
+gan = build_gan(generator, discriminator)
+gan.compile(loss='binary_crossentropy', optimizer=K.optimizers.Adam())
+
+# 設定した反復回数だけGANの訓練を行う
+train(iterations, batch_size, sample_interval)
