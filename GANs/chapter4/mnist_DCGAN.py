@@ -89,7 +89,6 @@ def train(iterations, batch_size, sample_interval):
     accuracies = []
     iteration_checkpoints = []
 
-    save_file = 0
 
     # mniseデータセットのロード
     (x_train, _), (_, _) = mnist.load_data()
@@ -135,6 +134,8 @@ def train(iterations, batch_size, sample_interval):
         # 生成器の学習
         g_loss = gan.train_on_batch(z, real)
 
+        print('\rNo, %d' %(iteration+1), end='')
+
         if (iteration + 1) % sample_interval == 0:
 
             # あとで可視化するために損失と精度を保存しておく
@@ -143,15 +144,14 @@ def train(iterations, batch_size, sample_interval):
             iteration_checkpoints.append(iteration + 1)
 
             # 学習結果の出力
-            print('%d [D loss: %f, acc.: %.2f%%] [G loss: %f]' %(iteration+1, d_loss, 100.0*accuracy, g_loss))
+            print('[D loss: %f, acc.: %.2f%%] [G loss: %f]' %(d_loss, 100.0*accuracy, g_loss))
 
-            # 生成したサンプル画像を保存する
-            save_file += sample_interval
-            sample_images(generator, save_file, iteration+1)
+            sample_images(generator)
 
 
 
-def sample_images(generator, save_file, iteration, image_grid_rows=4, image_grid_columns=4):
+
+def sample_images(generator, image_grid_rows=4, image_grid_columns=4):
 
     # ノイズベクトルを生成する
     z = np.random.normal(0, 1, (image_grid_rows * image_grid_columns, z_dim))
@@ -162,7 +162,6 @@ def sample_images(generator, save_file, iteration, image_grid_rows=4, image_grid
     # 出力の画素値を[0, 1]の範囲にスケーリングする
     gen_imgs = 0.5 * gen_imgs + 0.5
 
-    fig = plt.figure()
 
     # 画像からなるグリッドを生成する
     fig, axs = plt.subplots(image_grid_rows, image_grid_columns, figsize=(4, 4), sharey=True, sharex=True)
@@ -174,9 +173,6 @@ def sample_images(generator, save_file, iteration, image_grid_rows=4, image_grid
             axs[i, j].axis('off')
             count += 1
     
-    save_file += sample_interval
-    fig.savefig('predict_imgs/{}itertions_trained.png'.format(iteration))
-
 
 img_rows = 28
 img_cols = 28
