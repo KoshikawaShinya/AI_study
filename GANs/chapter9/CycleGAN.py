@@ -1,7 +1,7 @@
 from __future__ import print_function, division
 import scipy
 from keras.datasets import mnist
-from keras_contrib.layers.normalization import InstanceNormalization
+from keras_contrib.layers.normalization.instancenormalization import InstanceNormalization
 from keras.layers import Input, Dense, Reshape, Flatten, Dropout, Concatenate
 from keras.layers import BatchNormalization, Activation, ZeroPadding2D
 from keras.layers.advanced_activations import LeakyReLU
@@ -82,7 +82,7 @@ class DataLoader():
         return scipy.misc.imread(path, mode='RGB').astype(np.float)
 
 
-class CycleGAN:
+class CycleGAN_core:
     def __init__(self):
         # 入力のshape
         self.img_rows = 128
@@ -156,30 +156,30 @@ class CycleGAN:
                               optimizer=optimizer)
 
 
+
+
+    def conv2d(self, layer_input, filters, f_size=4, normalization=True):
+        """識別器"""
+        d = Conv2D(filters, kernel_size=f_size, strides=2, padding='same')(layer_input)
+        d = LeakyReLU(alpha=0.2)(d)
+        if normalization:
+            d = InstanceNormalization()(d)
+
+        return d
+
+    def deconv2d(self, layer_input, skip_input, filters, f_size=4, dropout_rate=0):
+        """アップサンプリング中に使われる層##"""
+        u = UpSampling2D(size=2)(layer_input)
+        u = Conv2D(filters, kernel_size=f_size, strides=1, padding='same', activation='relu')(u)
+        if dropout_rate:
+            u = Dropout(dropout_rate)(u)
+        u = InstanceNormalization()(u)
+        u = Concatenate()([u, skip_input])
+
+        return u
+
     def build_generator(self):
         """U-Netの生成"""
-
-        def conv2d(layer_input, filters, f_size=4, normalization=True):
-            """識別器"""
-            d = Conv2D(filters, kernel_size=f_size, strides=2, padding='same')(layer_input)
-            d = LeakyReLU(alpha=0.2)(d)
-            if normalization:
-                d = InstanceNormalization()(d)
-
-            return d
-
-        @staticmethod
-        def deconv2d(layer_input, skip_input, filters, f_size=4, dropout_rate=0):
-            """アップサンプリング中に使われる層##"""
-            u = UpSampling2D(size=2)(layer_input)
-            u = Conv2D(filters, kernel_size=f_size, strides=1, padding='same', activation='relu')(u)
-            if dropout_rate:
-                u = Dropout(dropout_rate)(u)
-            u = InstanceNormalization()(u)
-            u = Concatenate()([u, skip_input])
-
-            return u
-
 
         # 画像入力
         # d0(128 x 128 x 3)
@@ -232,7 +232,7 @@ class CycleGAN:
 
 
 # CycleGANの訓練
-class CycleGAN(CycleGAN):
+class CycleGAN(CycleGAN_core):
     def train(self, epochs, batch_size=1, sample_interval=50):
         # 敵対性損失の正解ラベル
         valid = np.ones((batch_size,) + self.disc_patch)
@@ -270,6 +270,42 @@ class CycleGAN(CycleGAN):
                 #                       敵対性損失                           サイクル一貫性損失                同一性損失
                 g_loss = self.combined.train_on_batch([imgs_A, imgs_B], [valid, valid, imgs_A, imgs_B, imgs_A, imgs_B])
 
+                print('\rNo, %d' %(epoch+1), end='')
+
                 # 保存インターバルになったら生成された画像サンプルを保存
                 if batch_i % sample_interval == 0:
                     self.sample_images(epoch, batch_i)
+
+    def sample_images(self, epoch, batch_i):
+        r, c = 2, 3
+
+        imgs_A = self.data_loader.load_data(domain="A", batch_size=1, is_testing=True)
+        imgs_B = self.data_loader.load_data(domain="B", batch_size=1, is_testing=True)
+        
+        # Translate images to the other domain
+        fake_B = self.g_AB.predict(imgs_A)
+        fake_A = self.g_BA.predict(imgs_B)
+        # Translate back to original domain
+        reconstr_A = self.g_BA.predict(fake_B)
+        reconstr_B = self.g_AB.predict(fake_A)
+
+        gen_imgs = np.concatenate([imgs_A, fake_B, reconstr_A, imgs_B, fake_A, reconstr_B])
+
+        # Rescale images 0 - 1
+        gen_imgs = 0.5 * gen_imgs + 0.5
+
+        titles = ['Original', 'Translated', 'Reconstructed']
+        fig, axs = plt.subplots(r, c)
+        cnt = 0
+        for i in range(r):
+            for j in range(c):
+                axs[i,j].imshow(gen_imgs[cnt])
+                axs[i, j].set_title(titles[j])
+                axs[i,j].axis('off')
+                cnt += 1
+        fig.savefig("images/%s/%d_%d.png" % (self.dataset_name, epoch, batch_i))
+        plt.show()
+
+
+cycle_gan = CycleGAN()
+cycle_gan.train(epochs=100, batch_size=64, sample_interval=10)
