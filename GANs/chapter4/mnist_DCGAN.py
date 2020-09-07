@@ -172,6 +172,8 @@ def sample_images(generator, image_grid_rows=4, image_grid_columns=4):
             axs[i, j].imshow(gen_imgs[count, :, :, 0], cmap='gray')
             axs[i, j].axis('off')
             count += 1
+
+
     
 
 img_rows = 28
