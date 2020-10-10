@@ -1,30 +1,20 @@
-from keras.layers import Input, Conv2D, Conv2DTranspose, Flatten, Dense, Reshape, Activation, Lambda, LeakyReLU
+from keras.layers import Input, Conv2D, Flatten, Dense, Conv2DTranspose, Reshape, Lambda, Activation, BatchNormalization, LeakyReLU, Dropout
 from keras.models import Model, Sequential
+from keras import backend as K
 from keras.optimizers import Adam
-import keras.backend as K
+from keras.callbacks import ModelCheckpoint 
+from keras.utils import plot_model
+
 from keras.datasets import mnist
 import numpy as np
 
 class Vae:
 
-    def __init__(self):
+    def __init__(self, img_shape, z_dim):
 
-        (x_train, y_train), (x_test, y_test) = mnist.load_data()
-
-        x_train = x_train / 127.5 - 1.0
-        x_test = x_test / 127.5 - 1.0
-
-        self.x_train = np.expand_dims(x_train, axis=-1)
-        self.x_test = np.expand_dims(x_test, axis=-1)
-
-        img_shape = (28, 28, 1)
-        z_dim = 2
-        self.batch_size = 64
-        self.epochs = 10
-        self.r_loss_factor = 100
+        self.r_loss_factor = 1000
 
         optimizer = Adam()
-        K.clear_session()
 
 
         self.model = self.build_vae(img_shape, z_dim)
@@ -60,14 +50,14 @@ class Vae:
                 epsilon = K.random_normal(shape=K.shape(mu), mean=0., stddev=1.)
                 return mu + K.exp(log_var / 2) * epsilon
 
-        output_layer = Lambda(sampling)([self.mu, self.log_var])
+        output_layer = Lambda(sampling, name='encoder_output')([self.mu, self.log_var])
 
         return Model(input_layer, output_layer)
 
     def build_decoder(self, z_dim):
 
         # (2)
-        input_layer = Input(shape=[z_dim])
+        input_layer = Input(shape=(z_dim,))
 
         # (2) => (3136) => (7, 7, 64)
         x = Dense(3136)(input_layer)
@@ -117,10 +107,24 @@ class Vae:
         kl_loss = self.kl_loss(y_true, y_pred)
         return r_loss + kl_loss
 
-    def train(self):
-        self.model.fit(self.x_train, self.x_train, batch_size=self.batch_size, epochs=self.epochs)
+    def train(self, x, y, batch_size, epochs):
+        self.model.fit(x, y, batch_size=batch_size, shuffle=True, epochs=epochs)
 
 
+K.clear_session()
+(x_train, y_train), (x_test, y_test) = mnist.load_data()
 
-vae = Vae()
-vae.train()
+x_train = x_train / 127.5 - 1.0
+x_test = x_test / 127.5 - 1.0
+
+x_train = np.expand_dims(x_train, axis=-1)
+x_test = np.expand_dims(x_test, axis=-1)
+print(x_train.shape)
+
+img_shape = (28, 28, 1)
+z_dim = 2
+batch_size = 64
+epochs = 10
+
+vae = Vae(img_shape, z_dim)
+vae.train(x_train, x_train, batch_size, epochs)
