@@ -11,11 +11,13 @@ class GAN:
         self.img_shape = img_shape
         self.z_dim = z_dim
 
+        self.potimizer = Adam(lr=0.0002, beta_1=0.5)
+
 
     def build_generator(self):
         
         # (100)
-        input_layer = Input(shape=(z_dim,))
+        input_layer = Input(shape=(self.z_dim,))
 
         # (100) => (7, 7, 64)
         x = Dense(3136)(input_layer)
@@ -55,17 +57,17 @@ class GAN:
         x = Dropout(rate=0.4)(x)
 
         # (14, 14, 64) => (7, 7, 64)
-        x = Conv2D(64, kernel_size=5, strides=2, padding='same')(input_layer)
+        x = Conv2D(64, kernel_size=5, strides=2, padding='same')(x)
         x = Activation('relu')(x)
         x = Dropout(rate=0.4)(x)
 
         # (7, 7, 64) => (4, 4, 128)
-        x = Conv2D(128, kernel_size=5, strides=2, padding='same')(input_layer)
+        x = Conv2D(128, kernel_size=5, strides=2, padding='same')(x)
         x = Activation('relu')(x)
         x = Dropout(rate=0.4)(x)
 
         # (4, 4, 128) => (4, 4, 128)
-        x = Conv2D(128, kernel_size=5, strides=1, padding='same')(input_layer)
+        x = Conv2D(128, kernel_size=5, strides=1, padding='same')(x)
         x = Activation('relu')(x)
         x = Dropout(rate=0.4)(x)
 
@@ -74,4 +76,25 @@ class GAN:
         output_layer = Dense(1, activation='sigmoid')(x)
 
         return Model(input_layer, output_layer)
+
+    def build_GAN(self, generator, discriminator):
+
+        input_layer = Input(shape=(self.z_dim,))
+
+        x = generator(input_layer)
+        output_layer = discriminator(x)
+
+        return Model(input_layer, output_layer)
+
+    def compile(self):
+
+        # 識別器を訓練するモデルのコンパイル
+        self.discriminator = self.build_discriminator()
+        self.discriminator.compile(optimizer=self.optimizer, loss='binary_crossentropy', metrics=['accuracy'])
+
+        # 生成器を訓練するモデルのコンパイル
+        self.discriminator.trainable = False
+        self.generator = self.build_generator()
+        self.gan = self.build_GAN(self.generator, self.build_discriminator)
+        self.gan.compile(optimizer=self.optimizer, loss='binary_crossentropy', metrics=['accuracy'], experimental_run_tf_function=False)
 
