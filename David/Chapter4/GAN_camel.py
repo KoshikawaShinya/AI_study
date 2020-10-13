@@ -98,3 +98,23 @@ class GAN:
         self.gan = self.build_GAN(self.generator, self.build_discriminator)
         self.gan.compile(optimizer=self.optimizer, loss='binary_crossentropy', metrics=['accuracy'], experimental_run_tf_function=False)
 
+    def train_discriminator(self, x_train, batch_size):
+
+        valid = np.ones((batch_size, 1))
+        fake = np.zeros((batch_size, 1))
+
+        # 実際の画像で訓練
+        idx = np.random.randint(0, x_train.shape[0], batch_size)
+        valid_imgs = x_train[idx]
+        self.discriminator.train_on_batch(x_train, valid)
+
+        # 生成された画像で訓練
+        noise = np.random.normal(0, 1, (batch_size, z_dim))
+        gen_imgs = self.generator.predict(noise)
+        self.discriminator.train_on_batch(gen_imgs, fake)
+
+    def train_generator(self, batch_size):
+        
+        valid = np.ones((batch_size, 1))
+        noise = np.random.normal(0, 1, (batch_size, z_dim))
+        self.gan.train_on_batch(noise, valid)
