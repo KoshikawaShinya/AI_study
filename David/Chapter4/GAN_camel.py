@@ -11,7 +11,8 @@ class GAN:
         self.img_shape = img_shape
         self.z_dim = z_dim
 
-        self.potimizer = Adam(lr=0.0002, beta_1=0.5)
+        self.optimizer_d = Adam(lr=0.0002, beta_1=0.5)
+        self.optimizer_g = Adam(lr=0.0001, beta_1=0.5)
 
 
     def build_generator(self):
@@ -31,14 +32,18 @@ class GAN:
         x = BatchNormalization(momentum=0.9)(x)
         x = Activation('relu')(x)
 
+        # (14, 14, 128) => (28, 28, 64)
         x = UpSampling2D()(x)
         x = Conv2D(64, kernel_size=5, strides=1, padding='same')(x)
         x = BatchNormalization(momentum=0.9)(x)
         x = Activation('relu')(x)
 
+        # (28, 28, 64) => (28, 28, 64)
         x = Conv2D(64, kernel_size=5, strides=1, padding='same')(x)
+        x = BatchNormalization(momentum=0.9)(x)
+        x = Activation('relu')(x)
 
-        x = UpSampling2D()(x)
+        #(28, 28, 64) => (28, 28, 1) 
         x = Conv2D(1, kernel_size=5, strides=1, padding='same')(x)
 
         output_layer = Activation('tanh')(x)
@@ -77,26 +82,26 @@ class GAN:
 
         return Model(input_layer, output_layer)
 
-    def build_GAN(self, generator, discriminator):
+    def build_GAN(self):
 
-        input_layer = Input(shape=(self.z_dim,))
+        model = Sequential()
 
-        x = generator(input_layer)
-        output_layer = discriminator(x)
+        model.add(self.generator)
+        model.add(self.discriminator)
 
-        return Model(input_layer, output_layer)
+        return model
 
     def compile(self):
 
         # 識別器を訓練するモデルのコンパイル
         self.discriminator = self.build_discriminator()
-        self.discriminator.compile(optimizer=self.optimizer, loss='binary_crossentropy', metrics=['accuracy'])
+        self.discriminator.compile(optimizer=self.optimizer_d, loss='binary_crossentropy', metrics=['accuracy'])
 
         # 生成器を訓練するモデルのコンパイル
         self.discriminator.trainable = False
         self.generator = self.build_generator()
-        self.gan = self.build_GAN(self.generator, self.build_discriminator)
-        self.gan.compile(optimizer=self.optimizer, loss='binary_crossentropy', metrics=['accuracy'], experimental_run_tf_function=False)
+        self.gan = self.build_GAN()
+        self.gan.compile(optimizer=self.optimizer_g, loss='binary_crossentropy', metrics=['accuracy'])
 
     def train_discriminator(self, x_train, batch_size):
 
@@ -106,7 +111,7 @@ class GAN:
         # 実際の画像で訓練
         idx = np.random.randint(0, x_train.shape[0], batch_size)
         valid_imgs = x_train[idx]
-        self.discriminator.train_on_batch(x_train, valid)
+        self.discriminator.train_on_batch(valid_imgs, valid)
 
         # 生成された画像で訓練
         noise = np.random.normal(0, 1, (batch_size, z_dim))
@@ -118,3 +123,28 @@ class GAN:
         valid = np.ones((batch_size, 1))
         noise = np.random.normal(0, 1, (batch_size, z_dim))
         self.gan.train_on_batch(noise, valid)
+
+    def train_on_batch(self, x_train, batch_size, epochs):
+        
+        for epoch in range(epochs):
+            print('\repoch : %d' %(epoch), end='')
+            self.train_discriminator(x_train, batch_size)
+            self.train_generator(batch_size)
+
+
+row = 28
+col = 28
+channel = 1
+img_shape = (row, col, channel)
+batch_size = 256
+epochs = 1000
+z_dim = 100
+
+# (121399, 784) => (121399, 28, 28, 1)
+dataset = np.load('dataset/full_numpy_bitmap_camel.npy')
+dataset = np.reshape(dataset, (dataset.shape[0], row, col, channel))
+dataset = dataset / 127.5 - 1.0
+
+gan = GAN(img_shape, z_dim)
+gan.compile()
+gan.train_on_batch(dataset, batch_size, epochs)
