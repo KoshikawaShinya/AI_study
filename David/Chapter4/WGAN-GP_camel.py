@@ -4,6 +4,7 @@ from keras.models import Model, Sequential
 from keras import backend as K
 from keras.optimizers import Adam
 import numpy as np
+from functools import partial
 
 # 本物の画像のバッチと偽物の画像のバッチの間の直線のランダムな位置にある画像(補間画像)を取得
 class RandomWeightedAverage(_Merge):
@@ -18,13 +19,16 @@ class RandomWeightedAverage(_Merge):
 
 class GAN:
 
-    def __init__(self, img_shape, z_dim, clip_threshold=0.01):
+    def __init__(self, img_shape, z_dim, batch_size, clip_threshold=0.01):
 
         self.img_shape = img_shape
         self.z_dim = z_dim
+        self.batch_size = batch_size
         self.clip_threshold = clip_threshold
 
-        self.optimizer_d = Adam(lr=0.00005, beta_1=0.5)
+        self.grad_weight = 10
+
+        self.optimizer_c = Adam(lr=0.00005, beta_1=0.5)
         self.optimizer_g = Adam(lr=0.00005, beta_1=0.5)
 
 
@@ -116,21 +120,56 @@ class GAN:
 
             # gradientsベクトルのL2ノルム(ユークリッド距離)の計算
             gradient_l2_norm = K.sqrt(K.sum(K.square(gradients), axis=[1:len(gradients.shape)]))
-
+            
             # L2ノルムと1の間の距離の二乗を返す
             gradient_penalty = K.square(1 - gradient_l2_norm)
             return K.mean(gradient_penalty)
 
 
-        # 識別器を訓練するモデルのコンパイル
-        self.critic = self.build_discriminator()
-        self.critic.compile(optimizer=self.optimizer_d, loss=wasserstein)
+        """ 識別器を訓練するモデルのコンパイル"""
 
-        # 生成器を訓練するモデルのコンパイル
-        self.critic.trainable = False
         self.generator = self.build_generator()
+        self.critic = self.build_discriminator()
+
+        # 生成器が評価機を訓練するモデルに必要なため、生成器の重みを凍結
+        self.set_trainable(self.generator, False)
+
+        # 本物の画像のバッチとランダムな値zの二つを入力にとる
+        real_img = Input(shape=self.img_shape)
+        z_disc = Input(shape=(self.z_dim,))
+        fake_img = self.generator(z_disc)
+
+        # 本物と偽の画像はwasserstein損失を計算するために評価機に渡される
+        fake = self.critic(fake_img)
+        valid = self.critic(real_img)
+
+        # 補間画像作成
+        interpolated_img = RandomWeightedAverage(self.batch_size)([real_img, fake_img])
+        # 補間画像はgradient_penalty損失を計算するために評価機に渡される
+        validity_interpolated = self.critic(interpolated_img)
+
+        # kerasは損失関数に予測値と正解ラベルの二つしか渡せないため、partialを使いpartial_gp_lossを定義し、補間画像をgradient_penalty__lossに渡している
+        partial_gp_loss = partial(gradient_penalty_loss, interpolated_samples = interpolated_img)
+
+        # Kerasではこの関数に名前を付ける必要がある
+        partial_gp_loss.__name__ = 'gradient_penalty'
+
+        # 入力[本物の画像, ランダムノイズ], 出力[本物画像の予測値, 偽物画像の予測値, 補間画像の予測値]
+        self.critic_model = Model(inputs=[real_img, z_disc], outputs=[valid, fake, validity_interpolated])
+
+        self.critic_model.compile(loss=[wasserstein, wasserstein, partial_gp_loss], optimizer=self.optimizer_c, loss_weights=[1, 1, self.grad_weight])
+
+
+        """ 生成器を訓練するモデルのコンパイル"""
+        set_trainable(self.critic, False)
+        set_trainable(self.generator, True)
         self.gan = self.build_GAN()
         self.gan.compile(optimizer=self.optimizer_g, loss=wasserstein)
+
+    def set_trainable(self, m, val):
+        m.trainable = val
+        for l in m.layers:
+            l.trainable = val
 
     def train_discriminator(self, x_train, batch_size):
 
@@ -179,6 +218,6 @@ dataset = np.load('dataset/full_numpy_bitmap_camel.npy')
 dataset = np.reshape(dataset, (dataset.shape[0], row, col, channel))
 dataset = dataset / 127.5 - 1.0
 
-gan = GAN(img_shape, z_dim)
+gan = GAN(img_shape, z_dim, batch_size)
 gan.compile()
 gan.train_on_batch(dataset, batch_size, epochs)
