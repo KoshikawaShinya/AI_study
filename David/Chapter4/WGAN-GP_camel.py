@@ -171,38 +171,33 @@ class GAN:
         for l in m.layers:
             l.trainable = val
 
-    def train_discriminator(self, x_train, batch_size):
-
-        valid = np.ones((batch_size, 1))
-        fake = -np.ones((batch_size, 1))
-
-        # 実際の画像で訓練
-        idx = np.random.randint(0, x_train.shape[0], batch_size)
-        valid_imgs = x_train[idx]
-        self.critic.train_on_batch(valid_imgs, valid)
-
-        # 生成された画像で訓練
-        noise = np.random.normal(0, 1, (batch_size, z_dim))
-        gen_imgs = self.generator.predict(noise)
-        self.critic.train_on_batch(gen_imgs, fake)
-
-        for l in self.critic.layers:
-            weights = l.get_weights()
-            weights = [np.clip(w, -self.clip_threshold, self.clip_threshold) for w in weights]
-            l.set_weights(weights)
-
-    def train_generator(self, batch_size):
+    def train_discriminator(self, x_train):
         
-        valid = np.ones((batch_size, 1))
-        noise = np.random.normal(0, 1, (batch_size, z_dim))
+        valid = np.ones((self.batch_size, 1), dtype=np.float32)
+        fake = -np.ones((self.batch_size, 1), dtype=np.float32)
+        dummy = np.zeros((self.batch_size, 1), dtype=np.float32) # gradient_penalty_lossのためのダミーラベル
+
+        idx = np.random.randint(0, x_train.shape[0], self.batch_size)
+        valid_imgs = x_train[idx]
+        noise = np.random.normal(0, 1, (self.batch_size, self.z_dim))
+        # 入力[本物の画像, ランダムノイズ], 出力[本物画像のラベル, 偽物画像のラベル, 補間画像のダミーのラベル(実際には使われない)]
+        d_loss = self.critic_model.train_on_batch([valid_imgs, noise], [valid, fake, dummy])
+
+        return d_loss
+
+
+    def train_generator(self):
+        
+        valid = np.ones((self.batch_size, 1))
+        noise = np.random.normal(0, 1, (self.batch_size, z_dim))
         self.gan.train_on_batch(noise, valid)
 
-    def train_on_batch(self, x_train, batch_size, epochs):
+    def train_on_batch(self, x_train, epochs):
         
         for epoch in range(epochs):
             print('\repoch : %d' %(epoch), end='')
-            self.train_discriminator(x_train, batch_size)
-            self.train_generator(batch_size)
+            self.train_discriminator(x_train, self.batch_size)
+            self.train_generator(self.batch_size)
 
 
 row = 28
