@@ -1,4 +1,5 @@
 from keras.layers import Conv2D, Input, Concatenate, Dropout, Activation, UpSampling2D
+from keras.layers.advanced_activations import LeakyReLU
 from keras_contrib.layers.normalization.instancenormalization import InstanceNormalization
 from keras.models import Model
 from keras.optimizers import Adam
@@ -11,8 +12,50 @@ class CycleGan:
 
         # 生成器の最初の層のフィルタ数
         self.gen_n_filters = 32
+        # 識別器の最初の層のフィルタ数
+        self.disc_n_filters = 32
 
-        self.optimizer = Adam(lr=0.001)
+        self.optimizer = Adam(lr=0.0002, beta_1=0.5)
+
+        # 統合モデルの損失の重み
+        self.lambda_valid = 1
+        self.lambda_reconstr = 10
+        self.lambda_id = 2
+
+
+        # 識別器
+        self.d_A = self.build_discriminator()
+        self.d_B = self.build_discriminator()
+
+        self.d_A.compile(optimizer=self.optimizer, loss='mse', metrics=['accuracy'])
+        self.d_B.compile(optimizer=self.optimizer, loss='mse', metrics=['accuracy'])
+
+        # 生成器
+        self.g_AB = self.build_generator_unet()
+        self.g_BA = self.build_generator_unet()
+
+        self.d_A.trainable = False
+        self.d_B.trainable = False
+
+        img_A = Input(shape=self.img_shape)
+        img_B = Input(shape=self.img_shape)
+
+        fake_A = self.g_BA(img_B)
+        fake_B = self.g_AB(img_A)
+        # 敵対性
+        valid_A = self.d_A(fake_A)
+        valid_B = self.d_B(fake_B)
+        # サイクル一貫性
+        reconstr_A = self.g_BA(fake_B)
+        reconstr_B = self.g_AB(fake_A)
+        # 同一性
+        img_A_id = self.g_BA(img_A)
+        img_B_id = self.g_AB(img_B)
+
+        self.combined = Model(inputs=[img_A, img_B], outputs=[valid_A, valid_B, reconstr_A, reconstr_B, img_A_id, img_B_id])
+        self.combined.compile(loss=['mse', 'mse', 'mae', 'mae', 'mae', 'mae'],
+                              loss_weights=[self.lambda_valid, self.lambda_valid, self.lambda_reconstr, self.lambda_reconstr, self.lambda_id, self.lambda_id],
+                              optimizer=self.optimizer)
 
 
     def build_generator_unet(self):
@@ -53,8 +96,30 @@ class CycleGan:
         output = Conv2D(self.channels, kernel_size=4, strides=1, padding='same', activation='tanh')(u4)
 
         return Model(img, output)
+
+    
+    def build_discriminator(self):
+
+        def conv4(layer_input, filters, stride=2, norm=True):
+            y = Conv2D(filters, kernel_size=4, strides=stride, padding='same')(layer_input)
+            if norm:
+                y = InstanceNormalization(axis=-1, center=False, scale=False)(y)
+            y = LeakyReLU(alpha=0.2)(y)
+
+            return y
         
+        img = Input(shape=self.img_shape)
+
+        y = conv4(img, filters=self.disc_n_filters, stride=2, norm=False)
+        y = conv4(y, filters=self.disc_n_filters*2, stride=2)
+        y = conv4(y, filters=self.disc_n_filters*4, stride=2)
+        y = conv4(y, filters=self.disc_n_filters*8, stride=1)
+
+        output = Conv2D(1, kernel_size=4, strides=1, padding='same')(y)
+
+        return Model(img, output)
 
 
-img_size = 64
+
+img_size = 128
 img_shape = (img_size, img_size, 3)
