@@ -25,9 +25,9 @@ class DataLoaderCycle_npz:
             yield imgs_A_batch, imgs_B_batch
 
 class DataLoaderCycle:
-    def __init__(self, dataset_name, img_size):
+    def __init__(self, dataset_name, img_shape):
         self.dataset_name = dataset_name
-        self.img_size = img_size
+        self.img_shape = img_shape
 
     def load_batch(self, batch_size=1):
 
@@ -48,8 +48,8 @@ class DataLoaderCycle:
                 img_A = cv2.cvtColor(img_A, cv2.COLOR_BGR2RGB)
                 img_B = cv2.cvtColor(img_B, cv2.COLOR_BGR2RGB)
 
-                img_A = cv2.resize(img_A, (self.img_size[0], self.img_size[1]))
-                img_B = cv2.resize(img_B, (self.img_size[0], self.img_size[1]))
+                img_A = cv2.resize(img_A, (self.img_shape[0], self.img_shape[1]))
+                img_B = cv2.resize(img_B, (self.img_shape[0], self.img_shape[1]))
 
                 imgA_batch.append(img_A)
                 imgB_batch.append(img_B)

@@ -5,11 +5,16 @@ from keras.models import Model
 from keras.optimizers import Adam
 import numpy as np
 
+from dataloader import DataLoaderCycle
+
 class CycleGan:
 
     def __init__(self, img_shape):
         self.img_shape = img_shape
         self.channels = self.img_shape[2]
+
+        # データローダー
+        self.dataloader = DataLoaderCycle('apple2orange', self.img_shape)
 
         # 生成器の最初の層のフィルタ数
         self.gen_n_filters = 32
@@ -127,12 +132,24 @@ class CycleGan:
         valid = np.ones((batch_size,) + self.disc_patch)
         fake = np.zeros((batch_size,) + self.disc_patch)
 
-        # 終わってない
         for epoch in epochs:
-            for batch_i, (imgs_A, imgs_B) in enumerate(data_loader.load_batch(batch_size)):
+            for batch_i, (imgs_A, imgs_B) in enumerate(self.data_loader.load_batch(batch_size)):
+                
+                fake_B = self.g_AB.predict(imgs_A)
+                fake_A = self.g_BA.predict(imgs_B)
 
+                dA_loss_real = self.d_A.train_on_batch(imgs_A, valid)
+                dA_loss_fake = self.d_B.train_on_batch(fake_A, fake)
+                dA_loss = 0.5 * np.add(dA_loss_real, dA_loss_fake)
 
+                dB_loss_real = self.d_B.train_on_batch(imgs_B, valid)
+                dB_loss_fake = self.d_B.train_on_batch(fake_B, fake)
+                dB_loss = 0.5 * np.add(dB_loss_real, dB_loss_fake)
 
+                d_loss = 0.5 * np.add(dA_loss, dB_loss)
+
+                g_loss = self.combined.train_on_batch([imgs_A, imgs_B], [valid, valid, imgs_A, imgs_B, imgs_A, imgs_B])
+                
 
 
 
