@@ -3,6 +3,7 @@ from keras.layers.advanced_activations import LeakyReLU
 from keras_contrib.layers.normalization.instancenormalization import InstanceNormalization
 from keras.models import Model
 from keras.optimizers import Adam
+import numpy as np
 
 class CycleGan:
 
@@ -118,6 +119,20 @@ class CycleGan:
         output = Conv2D(1, kernel_size=4, strides=1, padding='same')(y)
 
         return Model(img, output)
+
+    def train(self, batch_size, epochs):
+        patch = int(self.img_shape[0] / 2**4)
+        self.disc_patch = (patch, patch, 1)
+
+        valid = np.ones((batch_size,) + self.disc_patch)
+        fake = np.zeros((batch_size,) + self.disc_patch)
+
+        # 終わってない
+        for epoch in epochs:
+            for batch_i, (imgs_A, imgs_B) in enumerate(data_loader.load_batch(batch_size)):
+
+
+
 
 
 
