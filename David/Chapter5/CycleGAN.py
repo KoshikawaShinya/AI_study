@@ -74,7 +74,7 @@ class CycleGan:
             return d
         
         def upsample(layer_input, skip_input, filters, kernel_size=4, dropout_rate=0):
-            u = UpSampling2D(size=2)(layer_input)
+            u = UpSampling2D()(layer_input)
             u = Conv2D(filters, kernel_size=kernel_size, strides=1, padding='same')(u)
             u = InstanceNormalization(axis=-1, center=False, scale=False)(u)
             u = Activation('relu')(u)
@@ -91,7 +91,7 @@ class CycleGan:
         d1 = downsample(layer_input=img, filters=self.gen_n_filters)
         d2 = downsample(layer_input=d1, filters=self.gen_n_filters*2)
         d3 = downsample(layer_input=d2, filters=self.gen_n_filters*4)
-        d4 = downsample(layer_input=d2, filters=self.gen_n_filters*8)
+        d4 = downsample(layer_input=d3, filters=self.gen_n_filters*8)
 
         # アップサンプリング
         u1 = upsample(layer_input=d4, skip_input=d3, filters=self.gen_n_filters*4)
@@ -119,7 +119,7 @@ class CycleGan:
         y = conv4(img, filters=self.disc_n_filters, stride=2, norm=False)
         y = conv4(y, filters=self.disc_n_filters*2, stride=2)
         y = conv4(y, filters=self.disc_n_filters*4, stride=2)
-        y = conv4(y, filters=self.disc_n_filters*8, stride=1)
+        y = conv4(y, filters=self.disc_n_filters*8, stride=2)
 
         output = Conv2D(1, kernel_size=4, strides=1, padding='same')(y)
 
@@ -132,8 +132,8 @@ class CycleGan:
         valid = np.ones((batch_size,) + self.disc_patch)
         fake = np.zeros((batch_size,) + self.disc_patch)
 
-        for epoch in epochs:
-            for batch_i, (imgs_A, imgs_B) in enumerate(self.data_loader.load_batch(batch_size)):
+        for epoch in range(epochs):
+            for batch_i, (imgs_A, imgs_B) in enumerate(self.dataloader.load_batch(batch_size)):
                 
                 fake_B = self.g_AB.predict(imgs_A)
                 fake_A = self.g_BA.predict(imgs_B)
@@ -155,3 +155,8 @@ class CycleGan:
 
 img_size = 128
 img_shape = (img_size, img_size, 3)
+epochs = 100
+batch_size = 1
+
+cyclegan = CycleGan(img_shape)
+cyclegan.train(batch_size, epochs)
