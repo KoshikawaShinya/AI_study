@@ -57,4 +57,27 @@ class DataLoaderCycle:
             imgA_batch = np.array(imgA_batch) / 127.5 - 1.0
             imgB_batch = np.array(imgB_batch) / 127.5 - 1.0
 
-            yield imgA_batch, imgB_batch
+            yield imgA_batch, 
+            
+    def load_img(self):
+
+        imgA_pathe = glob.glob('imgs/%s/trainA/*'%(self.dataset_name))
+        imgB_pathe = glob.glob('imgs/%s/trainB/*'%(self.dataset_name))
+
+
+        idx_A = np.random.choice(imgA_pathe, replace=False)
+        idx_B = np.random.choice(imgB_pathe, replace=False)
+            
+        img_A = cv2.imread(idx_A, cv2.IMREAD_COLOR)
+        img_B = cv2.imread(idx_B, cv2.IMREAD_COLOR)
+
+        img_A = cv2.cvtColor(img_A, cv2.COLOR_BGR2RGB)
+        img_B = cv2.cvtColor(img_B, cv2.COLOR_BGR2RGB)
+
+        img_A = cv2.resize(img_A, (self.img_shape[0], self.img_shape[1]))
+        img_B = cv2.resize(img_B, (self.img_shape[0], self.img_shape[1]))
+
+        img_A = np.array(img_A) / 127.5 - 1.0
+        img_B = np.array(img_B) / 127.5 - 1.0
+
+        return img_A, img_B

@@ -3,6 +3,7 @@ from keras.layers.advanced_activations import LeakyReLU
 from keras_contrib.layers.normalization.instancenormalization import InstanceNormalization
 from keras.models import Model
 from keras.optimizers import Adam
+import matplotlib.pyplot as plt
 import numpy as np
 
 from dataloader import DataLoaderCycle
@@ -125,7 +126,7 @@ class CycleGan:
 
         return Model(img, output)
 
-    def train(self, batch_size, epochs):
+    def train(self, batch_size, epochs, sample_interval):
         patch = int(self.img_shape[0] / 2**4)
         self.disc_patch = (patch, patch, 1)
 
@@ -149,6 +150,39 @@ class CycleGan:
                 d_loss = 0.5 * np.add(dA_loss, dB_loss)
 
                 g_loss = self.combined.train_on_batch([imgs_A, imgs_B], [valid, valid, imgs_A, imgs_B, imgs_A, imgs_B])
+            
+            if epoch & sample_interval == 0:
+                sample_images(epoch)
+
+    
+    def sample_images(self, epoch):
+        r, c = 2, 3
+
+        img_A, img_B = self.dataloader.load_img()
+        
+        # Translate images to the other domain
+        fake_B = self.g_AB.predict(img_A)
+        fake_A = self.g_BA.predict(img_B)
+        # Translate back to original domain
+        reconstr_A = self.g_BA.predict(fake_B)
+        reconstr_B = self.g_AB.predict(fake_A)
+
+        gen_imgs = np.concatenate([img_A, fake_B, reconstr_A, img_B, fake_A, reconstr_B])
+
+        # Rescale images 0 - 1
+        gen_imgs = 0.5 * gen_imgs + 0.5
+
+        titles = ['Original', 'Translated', 'Reconstructed']
+        fig, axs = plt.subplots(r, c)
+        cnt = 0
+        for i in range(r):
+            for j in range(c):
+                axs[i,j].imshow(gen_imgs[cnt])
+                axs[i, j].set_title(titles[j])
+                axs[i,j].axis('off')
+                cnt += 1
+        fig.savefig("images/%s/%d_%d.png" % (self.dataset_name, epoch))
+        #plt.show()
                 
 
 
@@ -157,6 +191,7 @@ img_size = 128
 img_shape = (img_size, img_size, 3)
 epochs = 100
 batch_size = 1
+sample_interval = 10
 
 cyclegan = CycleGan(img_shape)
-cyclegan.train(batch_size, epochs)
+cyclegan.train(batch_size, epochs, sample_interval)
