@@ -59,10 +59,11 @@ class DataLoaderCycle:
                 imgA_batch.append(img_A)
                 imgB_batch.append(img_B)
             
-            imgA_batch = np.array(imgA_batch) / 127.5 - 1.0
-            imgB_batch = np.array(imgB_batch) / 127.5 - 1.0
+            imgA_batch = np.array(imgA_batch, dtype=np.float32) / 127.5 - 1.0
+            imgB_batch = np.array(imgB_batch, dtype=np.float32) / 127.5 - 1.0
+            print(imgA_batch.dtype)
 
-            yield imgA_batch, 
+            yield imgA_batch, imgB_batch
             
     def load_img(self):
 

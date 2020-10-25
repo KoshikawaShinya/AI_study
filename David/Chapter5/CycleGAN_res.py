@@ -9,6 +9,7 @@ import numpy as np
 
 from dataloader import DataLoaderCycle
 
+
 class CycleGan:
 
     def __init__(self, img_shape):
@@ -28,7 +29,7 @@ class CycleGan:
         # 統合モデルの損失の重み
         self.lambda_valid = 1
         self.lambda_reconstr = 10
-        self.lambda_id = 2
+        self.lambda_id = 5
 
 
         # 識別器
@@ -153,7 +154,7 @@ class CycleGan:
         # アップサンプリング
         u = upsample(layer_input=res, filters=self.gen_n_filters*2, kernel_size=3)
         u = upsample(layer_input=u, filters=self.gen_n_filters, kernel_size=3)
-        output = Conv2DTranspose(filters=self.gen_n_filters, kernel_size=7, strides=1, padding='same', activation='tanh')(u)
+        output = Conv2DTranspose(filters=3, kernel_size=7, strides=1, padding='same', activation='tanh')(u)
         
         model = Model(img, output)
         model.summary()
@@ -239,7 +240,6 @@ class CycleGan:
                 cnt += 1
         fig.savefig("plt_imgs/%s/%d.png" % (self.dataset_name, epoch))
         #plt.show()
-                
 
 
 
