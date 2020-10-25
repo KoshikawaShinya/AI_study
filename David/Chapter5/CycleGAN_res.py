@@ -1,4 +1,4 @@
-from keras.layers import Conv2D, Input, Concatenate, Dropout, Activation, UpSampling2D, BatchNormalization, Add
+from keras.layers import Conv2D, Conv2DTranspose, Input, Concatenate, Dropout, Activation, UpSampling2D, BatchNormalization, Add
 from keras.layers.advanced_activations import LeakyReLU
 from keras_contrib.layers.normalization.instancenormalization import InstanceNormalization
 from keras.models import Model
@@ -39,8 +39,8 @@ class CycleGan:
         self.d_B.compile(optimizer=self.optimizer, loss='mse', metrics=['accuracy'])
 
         # 生成器
-        self.g_AB = self.build_generator_unet()
-        self.g_BA = self.build_generator_unet()
+        self.g_AB = self.build_generator_resnet()
+        self.g_BA = self.build_generator_resnet()
 
         self.d_A.trainable = False
         self.d_B.trainable = False
@@ -107,22 +107,58 @@ class CycleGan:
 
     def build_generator_resnet(self):
 
-        def residual_block(x, kernel_size, filters, layers=2):
-            shortcut_x = x
+        def downsample(layer_input, filters, kernel_size=4):
+            d = Conv2D(filters, kernel_size=kernel_size, strides=2, padding='same')(layer_input)
+            d = InstanceNormalization(axis=-1, center=False, scale=False)(d)
+            d = Activation('relu')(d)
 
-            for l in range(layers):
-                x = Conv2D(filters=filters, kernel_size=kernel_size, padding='same')(x)
-                x = BatchNormalization()(x)
+            return d
 
-                if l == layers-1:
-                    if K.int_shape(x) != K.int_shape(shortcut_x):
-                        shortcut_x = Conv2D(filters=filters, kernel_size=(1,1), padding='same')(shortcut_x)
+        def upsample(layer_input, filters, kernel_size=4, dropout_rate=0):
+            u = Conv2DTranspose(filters=filters, kernel_size=kernel_size, strides=2, padding='same')(layer_input)
+            u = InstanceNormalization(axis=-1, center=False, scale=False)(u)
+            u = Activation('relu')(u)
+            if dropout_rate:
+                u = Dropout(dropout_rate)(u)
+            
+            return u
 
-                    x = Add()([x, shortcut_x])
+        def residual_block(layer_input, kernel_size, filters):
+            shortcut = layer_input
 
-                x = LeakyReLU(alpha=0.1)(x)
+            y = Conv2D(filters=filters, kernel_size=kernel_size, strides=1, padding='same')(layer_input)
+            y = InstanceNormalization()(y)
+            y = Activation('relu')(y)
 
-            return x
+            y = Conv2D(filters=filters, kernel_size=kernel_size, strides=1, padding='same')(y)
+            y = InstanceNormalization()(y)
+
+            y = Add()([y, shortcut])
+
+            return y
+
+        # 入力画像
+        img = Input(shape=self.img_shape)
+
+        # ダウンサンプリング
+        d = Conv2D(filters=self.gen_n_filters, kernel_size=7, strides=1, padding='same')(img)
+        d = downsample(layer_input=d, filters=self.gen_n_filters, kernel_size=3)
+        d = downsample(layer_input=d, filters=self.gen_n_filters*2, kernel_size=3)
+
+        # 残差ブロック
+        res = residual_block(layer_input=d, filters=self.gen_n_filters*2, kernel_size=3)
+        for i in range(8):
+            res = residual_block(layer_input=res, filters=self.gen_n_filters*2, kernel_size=3)
+        
+        # アップサンプリング
+        u = upsample(layer_input=res, filters=self.gen_n_filters*2, kernel_size=3)
+        u = upsample(layer_input=u, filters=self.gen_n_filters, kernel_size=3)
+        output = Conv2DTranspose(filters=self.gen_n_filters, kernel_size=7, strides=1, padding='same', activation='tanh')(u)
+        
+        model = Model(img, output)
+        model.summary()
+
+        return model
 
     
     def build_discriminator(self):
