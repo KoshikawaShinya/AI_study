@@ -34,7 +34,12 @@ class DataLoaderCycle:
         imgA_pathes = glob.glob('imgs/%s/trainA/*'%(self.dataset_name))
         imgB_pathes = glob.glob('imgs/%s/trainB/*'%(self.dataset_name))
 
-        for i in range(len(imgA_pathes) // batch_size):
+        if len(imgA_pathes) < len(imgA_pathes):
+            length = len(imgA_pathes)
+        else:
+            length = len(imgB_pathes)
+
+        for i in range(length // batch_size):
             imgA_batch = []
             imgB_batch = []
 
