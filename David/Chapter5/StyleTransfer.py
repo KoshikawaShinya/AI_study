@@ -3,9 +3,11 @@ from keras import backend as K
 from keras.preprocessing.image import load_img, img_to_array
 from scipy.optimize import fmin_l_bfgs_b
 import numpy as np
+import matplotlib.pyplot as plt
 
 base_img_path = 'imgs/transfer/Content.jpg'
 style_reference_img_path = 'imgs/transfer/Style.jpg'
+
 
 content_weight = 1.0
 style_weight = 100.0
@@ -13,6 +15,7 @@ total_variation_weight = 20.0
 style_loss = 0.0
 
 width, height = load_img(base_img_path).size
+print(width, height)
 img_nrows = 400
 img_ncols = int(width * img_nrows / height)
 
@@ -30,6 +33,7 @@ combination_img = K.placeholder((1, img_nrows, img_ncols, 3))
 
 # VGG19モデルへの入力テンソルは、3つの画像を連結したもの
 input_tensor = K.concatenate([base_img, style_reference_img, combination_img], axis=0)
+print(input_tensor.shape)
 
 # imagenetを学習したvgg19のインスタンス化。include_top=False : 画像分類の結果を出力する全結合層を読み込まない
 model = vgg19.VGG19(input_tensor=input_tensor, weights='imagenet', include_top=False)
@@ -93,6 +97,15 @@ tv_loss = total_variation_weight * total_variation_loss(combination_img)
 
 """ 全体の損失 """
 loss = content_loss + style_loss + tv_loss
+
+grads = K.gradients(loss, combination_img)
+outputs = [loss]
+
+# gradsがlist型かtuple型の時
+if isinstance(grads, (list, tuple)):
+    outputs += grads
+else:
+    outputs.append(grads)
 
 outputs = [loss]
 f_outputs = K.function([combination_img], outputs)
