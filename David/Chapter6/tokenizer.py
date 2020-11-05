@@ -1,10 +1,13 @@
-import re
 from keras.preprocessing.text import Tokenizer
+from keras.utils import to_categorical
+import re
+import numpy as np
 
-# 物語の始まりの改行を置き換える文字数
+# 訓練させる系列データの長さ
 seq_length = 20
 
 file_name = 'aesop.txt'
+new_file_name = 'aesop_fixed.txt'
 
 with open(file_name, encoding='utf-8-sig') as f:
     text = f.read()
@@ -28,8 +31,37 @@ text = text.replace('..', '.')
 text = re.sub('([!"#$%&()*+,-./:;<=>?@[\]^_`{|}~])', r' \1', text)
 text = re.sub('\s{2,}', ' ', text)
 
+with open(new_file_name, encoding='utf-8-sig', mode='w') as f:
+    f.write(text)
+
 """ トークン化 """
 tokenizer = Tokenizer(char_level=False, filters='')
 tokenizer.fit_on_texts([text])
 total_words = len(tokenizer.word_index) + 1
 token_list = tokenizer.texts_to_sequences([text])[0]
+
+# データセットの生成
+def generate_sequences(token_list, step):
+
+    X = []
+    Y = []
+
+    for i in range(0, len(token_list) - seq_length, step):
+
+        X.append(token_list[i : i + seq_length])
+        Y.append(token_list[i + seq_length])
+
+    # one-hotベクトル化
+    Y = to_categorical(Y, num_classes = total_words)
+
+    num_seq = len(X)
+    print('Number of sequences:', num_seq, "\n")
+
+    return X, Y, num_seq
+
+step = 1
+seq_length = 20
+X, y, num_seq = generate_sequences(token_list, step)
+
+X = np.array(X)
+Y = np.array(Y)
