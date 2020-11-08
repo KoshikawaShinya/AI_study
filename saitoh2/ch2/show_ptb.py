@@ -5,7 +5,7 @@ from dataset import ptb
 corpus, word_to_id, id_to_word = ptb.load_data('train')
 
 print("corpus size:" , len(corpus))
-print("corpus[:30]:", corpus[:30])
+print("corpus[:100]:", corpus[:100])
 print()
 print("id_to_word[0]:", id_to_word[0])
 print("id_to_word[1]:", id_to_word[1])

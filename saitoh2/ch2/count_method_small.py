@@ -1,8 +1,6 @@
-import sys
-sys.path.append('..')
 import numpy as np
 import matplotlib.pyplot as plt
-from common.util import preprocess, create_co_matrix, ppmi
+from util import preprocess, create_co_matrix, ppmi
 
 text = "You say goodbye and I say hello."
 corpus, word_to_id, id_to_word = preprocess(text)
@@ -19,6 +17,10 @@ print(W[0]) # PPMI行列
 
 print(U[0]) # SVD
 
+# 次元削減するのに、二次元ベクトルに削減する場合、単に先頭２つの要素を取り出せば良い
+print(U[0, :2])
+
+# 各単語を二次元ベクトルでグラフにプロット
 for word, word_id in word_to_id.items():
     plt.annotate(word, (U[word_id, 0], U[word_id, 1]))
 
