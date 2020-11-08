@@ -11,6 +11,6 @@ def create_context_target(corpus, window_size=1):
             if t == 0:
                 continue
             cs.append(corpus[index + t])
-        contexts.append(cs)
+        context.append(cs)
 
     return np.array(context), np.array(target) 

@@ -1,5 +1,6 @@
 import numpy as np
 
+# text文字列の単語を単語IDに変換(文字列からコーパスを作成)
 def preprocess(text):
     text = text.lower()
     text = text.replace('.', ' .')
@@ -37,8 +38,10 @@ def create_co_matrix(corpus, vocab_size, window_size=1):
     return co_matrix
 
 def cos_similarity(x, y, eps=1e-8):
-    nx = x / np.sqrt(np.sum(x**2) + eps)
-    ny = y / np.sqrt(np.sum(y**2) + eps)
+    # ベクトルを正規化して単位ベクトルにしてから内積をとる
+    # 同じ方向を向いていると1になり、反対を向いていると-1となる
+    nx = x / np.sqrt(np.sum(x**2) + eps) # xの正規化
+    ny = y / np.sqrt(np.sum(y**2) + eps) # yの正規化
     return np.dot(nx, ny)
 
 def most_similar(query, word_to_id, id_to_word, word_matrix, top=5):
@@ -59,6 +62,7 @@ def most_similar(query, word_to_id, id_to_word, word_matrix, top=5):
 
     # コサイン類似度の結果から、その値を高い順に出力
     count = 0
+    # argsortは昇順整列のため、-1をかけ降順に並べる。返り値は配列のインデックス
     for i in (-1 * similarity).argsort():
         if id_to_word[i] == query:
             continue
@@ -68,9 +72,12 @@ def most_similar(query, word_to_id, id_to_word, word_matrix, top=5):
         if count >= top:
             return
 
-def ppmi(C, verdose=False, eps=1e-8):
+# 正の相互情報量
+def ppmi(C, verbose=False, eps=1e-8):
     M = np.zeros_like(C, dtype=np.float32)
+    # N : 単語数
     N = np.sum(C)
+    # S : 単語単独の出現回数
     S = np.sum(C, axis=0)
     total = C.shape[0] * C.shape[1]
     cnt = 0
@@ -78,9 +85,11 @@ def ppmi(C, verdose=False, eps=1e-8):
     for i in range(C.shape[0]):
         for j in range(C.shape[1]):
             pmi = np.log2(C[i,j] * N / (S[j]*S[i]) + eps)
-            M[i, j] = max[0, pmi]
+            # ppmiを計算
+            M[i, j] = max(0, pmi)
 
-            if verdose:
+            # verbose : 進行状況を出力するかのフラグ
+            if verbose:
                 cnt += 1
                 if cnt % (total//100) == 0:
                     print("%.1f%% done" % (100*cnt/total))
