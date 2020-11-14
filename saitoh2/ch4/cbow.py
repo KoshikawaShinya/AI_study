@@ -9,6 +9,7 @@ class CBOW:
         V, H = vocab_size, hidden_size
 
         # 重みの初期化
+        # MatMulレイヤではなく、Embeddingレイヤを使用するため、重みは入力側も出力側も形が同じ
         W_in = 0.01 * np.random.randn(V, H).astype('float32')
         W_out = 0.01 * np.random.randn(V, H)
 

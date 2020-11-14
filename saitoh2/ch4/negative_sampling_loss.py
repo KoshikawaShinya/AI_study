@@ -8,6 +8,9 @@ class NegativeSamplingLoss:
     def __init__(self, W, corpus, power=0.75, sample_size=5):
         self.sample_size = sample_size
         self.sampler = UnigramSampler(corpus, power, sample_size)
+
+        # 負例用のレイヤーsample_size個と正例用のレイヤー一つをリストで保持
+        # self.loss_layers[0]とself.embed_dot_layers[0]が正例を扱う
         self.loss_layers = [SigmoidWithLoss() for _ in range(sample_size + 1)]
         self.embed_dot_layers = [EmbeddingDot(W) for _ in range(sample_size + 1)]
 
@@ -18,6 +21,7 @@ class NegativeSamplingLoss:
 
     def forward(self, h, target):
         batch_size = target.shape[0]
+        # 負例のサンプル
         negative_sample = self.sampler.get_negative_sample(target)
 
         # 正例のフォワード

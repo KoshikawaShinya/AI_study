@@ -4,6 +4,7 @@ sys.path.append('..')
 from common.np import *  # import numpy as np
 from common.layers import Embedding, SigmoidWithLoss
 import collections
+import numpy as np
 
 
 class EmbeddingDot:
