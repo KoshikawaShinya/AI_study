@@ -12,16 +12,18 @@ wordvec_size = 100
 hidden_size = 100 # RNNの隠れ状態ベクトルの要素数
 time_size = 5 # Truncated BPTTの展開する時間サイズ
 lr = 0.1
-max_epoch = 100
+max_epoch = 1000
 
 # 学習データの読み込み
 corpus, word_to_id, id_to_word = ptb.load_data('train')
-corpus_size = 1000
+corpus_size = 3000
 corpus = corpus[:corpus_size]
 vocab_size = int(max(corpus) + 1)
 
-xs = corpus[:-1] # 入力
-ts = corpus[1:] # 出力(教師ラベル)
+# xsは入力のため最後の文字の一つ手前まで
+xs = corpus[:-1] 
+# tsは正解ラベルのため、一番最初の文字を含まない
+ts = corpus[1:] 
 data_size = len(xs)
 print("corpus size: %d, vocablary size: %d" % (corpus_size, vocab_size))
 
@@ -45,8 +47,11 @@ for epoch in range(max_epoch):
         # ミニバッチの取得
         batch_x = np.empty((batch_size, time_size), dtype='i')
         batch_t = np.empty((batch_size, time_size), dtype='i')
+        # time_size個のデータを順番(シーケンシャル)に取得
         for t in range(time_size):
+            # 各batchでデータが被らないためにoffsetsによってミニバッチのデータ開始位置をずらす
             for i, offset in enumerate(offsets):
+                # コーパスサイズを超えた場合に先頭に戻るようにdata_sizeで割った余りを使用
                 batch_x[i, t] = xs[(offset + time_idx) % data_size]
                 batch_t[i, t] = ts[(offset + time_idx) % data_size]
             time_idx += 1
