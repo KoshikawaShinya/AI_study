@@ -74,3 +74,73 @@ class LSTM:
         dh_prev = np.dot(dA, Wh.T)
 
         return dx, dh_prev, dc_prev
+
+class TimeLSTM:
+
+    def __init__(self, Wx, Wh, b, stateful=false):
+        self.params = [Wx, Wh, b]
+        self.grads = [np.zeros_like(Wx), np.zeros_like(Wh), np.zeros_like(b)]
+        self.layers = None
+
+        self.h, self.c = None, None
+        self.dh = None
+        self.stateful = stateful
+
+    def forward(self, xs):
+        Wx, Wh, b = self.params
+        # バッチ数, 時系列データ数, 単語ベクトルの次元
+        N, T, D = xs.shape
+        # 隠れ状態ベクトルの次元数
+        H = Wh.shape[0]
+
+        self.layers = []
+        # LSTMレイヤの各時刻の出力を格納するための
+        hs = np.empty((N, T, H), dtype='f')
+
+        # statefulがFalseとなっている場合か。隠れ状態と記憶セルに何も入っていない場合初期化
+        # statefulをFalseにすると初期化が起こり、前のTimeLSTMで最後に計算された隠れ状態と記憶セルを記憶しなくなる
+        if not self.stateful or self.h is None:
+            self.h = np.zeros((N, H), dtype='f')
+        if not self.stateful or self.c is None:
+            self.c = np.zeros((N, H), dtype='f')
+
+        for t in range(T):
+            layer = LSTM(*self.params)
+            self.h, self.c = layer.forward(xs[:, t, :], self.h, self.c)
+            hs[:, t, :] = self.h
+
+            self.layers.append(layer)
+        
+        return hs
+
+    def backward(self, dhs):
+        Wx, Wh, b = self.params
+        N, T, H = dhs.shape
+        D = Wx.shape[0]
+
+        dxs = np.empty((N, T, D), dtype='f')
+        dh, dc = 0, 0
+
+        grads = [0, 0, 0]
+        for t in reversed(range(T)):
+            layer = self.layers[t]
+            # dhは出力側と隣の層に分かれているため、足す
+            dx, dh, dc = layer.backward(dhs[:, t, :] + dh, dc)
+            dxs[:, t, :] = dx
+
+            for i, grad in enumerate(layer.grads):
+                grads[i] += grad
+
+        for i, grad in enumerate(grads):
+            self.grads[i][...] = grad
+        
+        # 前の層への勾配
+        self.dh = dh
+
+        return dxs
+
+    def set_state(self, h, c=None):
+        self.h, self.c = h, c
+
+    def reset_state(self):
+        self.h, self.c = None, None
