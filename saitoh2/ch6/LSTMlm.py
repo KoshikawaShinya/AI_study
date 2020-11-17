@@ -33,7 +33,7 @@ class Rnnlm:
             self.params += layer.params
             self.grads += layer.grads
         
-    # 推測
+    # softmaxレイヤの直前までを処理
     def predict(self, xs):
         for layer in self.layers:
             xs = layer.forward(xs)
