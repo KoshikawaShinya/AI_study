@@ -66,7 +66,7 @@ class AttentionWeight:
         # (N, T)
         ds = self.softmax.backward(da)
         # (N, T, H)
-        dt = dt.reshape(N, T, 1).repeat(H, axis=2)
+        dt = ds.reshape(N, T, 1).repeat(H, axis=2)
         # (N, T, H)
         dhs = dt * hr
         dhr = dt * hs

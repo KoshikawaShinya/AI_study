@@ -2,7 +2,7 @@ import sys
 sys.path.append('..')
 from common.time_layers import TimeEmbedding, TimeLSTM, TimeAffine, TimeSoftmaxWithLoss
 from common.base_model import BaseModel
-from seq2seq import Seq2seq, Encoder
+from ch7.seq2seq import Seq2seq, Encoder
 import numpy as np
 
 
