@@ -41,7 +41,43 @@ class BaseTransform():
     def __call__(self, img):
         return self.base_trainsform(img)
 
-# 画像毎処理の動作確認
+class ILSVRCPredictor():
+    """
+    ILSVRCデータに対するモデルの出力からラベルを求める。
+
+    Attributes
+    ----------
+    class_index : dictionary
+        クラスindexとラベル名を対応させた辞書型変数。
+    """
+
+    def __init__(self, class_index):
+        self.class_index = class_index
+
+    def predict_max(self, out):
+        """
+        確率最大のILSVRCのラベル名を取得
+
+        Parameters
+        ----------
+        out : torch.size([1, 1000])
+            Netからの出力
+        
+        Returns
+        -------
+        predicted_label_name : str
+            最も予測確率の高いラベルの名前
+        """
+
+        # detach()で出力値をネットワークから切り離す
+        out = out.detach().numpy()
+        maxid = np.argmax(out)
+        predicted_label_name = self.class_index[str(maxid)][1]
+
+        return predicted_label_name
+
+
+"""画像毎処理の動作確認"""
 
 # 1. 画像読み込み
 image_file_path = './data/goldenretriever-3724972_640.jpg'
@@ -64,3 +100,28 @@ img_transformed = np.clip(img_transformed, 0, 1)
 plt.imshow(img_transformed)
 plt.imsave("./data/transformed.jpg", img_transformed)
 plt.show()
+
+
+"""VGGモデルで画像を予測"""
+
+# ILSVRCのラベル情報をロードし辞書型変数を生成
+ILSVRC_class_index = json.load(open('./data/imagenet_class_index.json', 'r'))
+
+# ILSVRCPredictorのインスタンスを生成
+predictor = ILSVRCPredictor(ILSVRC_class_index)
+
+# 入力画像を読み込む
+image_file_path = './data/goldenretriever-3724972_640.jpg'
+img = Image.open(image_file_path)
+
+# 前処理後、バッチサイズの次元を追加
+transform = BaseTransform(resize, mean, std) # 前処理クラスの作成
+img_transformed = transform(img)
+inputs = img_transformed.unsqueeze(0)
+
+# モデルに入力し、モデル出力をラベルに変換する
+out = net(inputs)   # torch.Size([1, 1000])
+result = predictor.predict_max(out)
+
+# 予測結果を出力
+print('入力画像の予測結果 : ', result)
