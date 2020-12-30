@@ -154,12 +154,30 @@ train_list = make_datapath_list(phase='train')
 val_list = make_datapath_list(phase='val')
 print(train_list)
 
+"""データセット"""
 train_dataset = HymenopteraDataset(file_list=train_list, transform=ImageTransform(size, mean, std), phase='train')
 val_dataset = HymenopteraDataset(file_list=val_list, transform=ImageTransform(size, mean, std), phase='val')
 
 # 動作確認
 index = 0
-# 画像
 image, label = train_dataset.__getitem__(index)
 print(image.size())
 print(label)
+
+"""データローダー"""
+# ミニバッチのサイズ指定
+batch_size = 32
+
+# DataLoaderを作成
+train_dataloader = data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+val_dataloader = data.DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+
+# 辞書型変数にまとめる
+dataloaders_dict = {'train': train_dataloader, 'val': val_dataloader}
+
+# 動作確認
+# イテレータにすることでnextにより一番目の要素を取得する
+batch_iterator = iter(dataloaders_dict['train'])    # イテレータに変換
+inputs, labels = next(batch_iterator)   # 一番目の要素を取り出す
+print(inputs.size())
+print(labels)
