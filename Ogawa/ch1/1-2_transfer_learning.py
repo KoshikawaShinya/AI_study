@@ -145,6 +145,61 @@ def make_datapath_list(phase='train'):
     
     return path_list
 
+# モデルを学習させるための関数
+def train_model(net, dataloaders_dict, criterion, optimizer, num_epochs):
+    # epochのループ
+    for epoch in range(num_epochs):
+        print('Epoch {}/{}'.format(epoch+1, num_epochs))
+        print('-------------')
+
+        # epochごとの学習と検証のループ
+        for phase in ['train', 'val']:
+            if phase == 'train':
+                net.train() # モデルを学習モードに
+            else:
+                net.eval()  # モデルを検証モードに
+
+            epoch_loss = 0.0    # epochの損失和
+            epoch_corrects = 0  # epochの正解数
+
+            # 未学習時の検証性能を確かめるため、epoch=0の訓練は省略
+            if (epoch == 0) and (phase == 'train'):
+                continue
+
+            # データローダーからミニバッチを取り出すループ
+            for inputs, labels in tqdm(dataloaders_dict[phase]):
+
+                # optimizerを初期化
+                optimizer.zero_grad()
+
+                # 順伝播(forward)計算
+                # 学習時のみ勾配を計算
+                with torch.set_grad_enabled(phase == 'train'):
+                    outputs = net(inputs)
+                    loss = criterion(outputs, labels)   # 損失を計算
+                    _, preds = torch.max(outputs, 1)     # ラベルを予測
+
+                    # 訓練時はバックプロパゲーション
+                    if phase == 'train':
+                        loss.backward()
+                        optimizer.step()
+                    
+                    # イテレーション結果の計算
+                    # lossの合計を更新
+                    # lossにはミニバッチサイズで平均した損失が格納されている。それをinputs.size(0)のミニバッチサイズを掛けて足すことで
+                    # 合計損失を求める。
+                    epoch_loss += loss.item() * inputs.size(0)
+                    # 正解数の合計を更新
+                    epoch_corrects += torch.sum(preds == labels.data)
+            
+            # epochごとのlossと正解率を表示
+            epoch_loss = epoch_loss / len(dataloaders_dict[phase].dataset)
+            epoch_acc = epoch_corrects.double() / len(dataloaders_dict[phase].dataset)
+
+            print('{} Loss: {:.4f} Acc: {:.4f}'.format(phase, epoch_loss, epoch_acc))
+
+
+
 # 実行
 size = 224
 mean = (0.485, 0.456, 0.406)
@@ -152,7 +207,6 @@ std = (0.229, 0.224, 0.225)
 
 train_list = make_datapath_list(phase='train')
 val_list = make_datapath_list(phase='val')
-print(train_list)
 
 """データセット"""
 train_dataset = HymenopteraDataset(file_list=train_list, transform=ImageTransform(size, mean, std), phase='train')
@@ -166,7 +220,7 @@ print(label)
 
 """データローダー"""
 # ミニバッチのサイズ指定
-batch_size = 32
+batch_size = 16
 
 # DataLoaderを作成
 train_dataloader = data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
@@ -181,3 +235,46 @@ batch_iterator = iter(dataloaders_dict['train'])    # イテレータに変換
 inputs, labels = next(batch_iterator)   # 一番目の要素を取り出す
 print(inputs.size())
 print(labels)
+
+"""VGG-16"""
+# 学習済みのVGG-16モデルをロード
+# VGG-16モデルのインスタンスを生成
+use_pretrained = True   # 学習済みのパラメータを使用
+net = models.vgg16(pretrained=use_pretrained)
+
+# VGG-16の最後の出力層の出力ユニットをアリとハチの２つに付け替える
+net.classifier[6] = nn.Linear(in_features=4096, out_features=2)
+
+# 訓練モードに設定
+net.train()
+print('ネットワーク設定完了')
+
+# 損失関数の設定
+criterion = nn.CrossEntropyLoss()
+
+# 転移学習で学習させるパラメータを、変数params_to_updateに格納する
+params_to_update = []
+
+# 学習させるパラメータ名
+update_param_names = ['classifier.6.weight', 'classifier.6.bias']
+
+# 学習させるパラメータ以外は勾配計算をなくし、変化しないように設定
+# requires_gradをTrueにすると学習時に値が更新される
+for name, param in net.named_parameters():
+    if name in update_param_names:
+        param.requires_grad = True
+        params_to_update.append(param)
+        print(name)
+    else:
+        param.requires_grad = False
+
+# params_to_updateの中身を確認
+print('-----------')
+print(params_to_update)
+
+# 最適化手法の設定
+optimizer = optim.SGD(params=params_to_update, lr=0.001, momentum=0.9)
+
+# 学習・検証
+num_epochs=3
+train_model(net, dataloaders_dict, criterion, optimizer, num_epochs=num_epochs)
