@@ -115,9 +115,9 @@ class HymenopteraDataset(data.Dataset):
 
         # 画像のラベルをファイル名から抜き出す
         if self.phase == "train":
-            label = img_path[30:34]
+            label = img_path[52:56]
         elif self.phase == "val":
-            label = img_path[28:32]
+            label = img_path[50:54]
 
         # ラベルを数値に変更する
         if label == "ants":
