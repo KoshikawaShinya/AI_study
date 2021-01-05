@@ -180,6 +180,97 @@ class DataTransform():
         """
         return self.data_transform[phase](img, boxes, labels)
 
+# VOC2012のDatasetを作成
+class VOCDataset(data.Dataset):
+    """
+    VOC2012のDatasetを作成するクラス。PyTorchのDatasetクラスを継承
+
+    Attributes
+    ----------
+    img_list : リスト
+        画像のパスを格納したリスト
+    anno_list : リスト
+        アノテーションへのパスを格納したリスト
+    phase : 'train' or 'val'
+        学習か訓練かを設定する
+    transform : object
+        前処理クラスのインスタンス
+    transform_anno : object
+        xmlのアノテーションをリストに変換するインスタンス
+    """
+
+    def __init__(self, img_list, anno_list, phase, transform, transform_anno):
+        self.img_list = img_list
+        self.anno_list = anno_list
+        self.phase = phase  # train若しくはvalを指定
+        self.transform = transform  # 画像の変形
+        self.transform_anno = transform_anno    # アノテーションデータをxmlからリストへ
+
+    def __len__(self):
+        '''画像の枚数を返す'''
+        return len(self.img_list)
+
+    def __getitem__(self, index):
+        '''
+        前処理をした画像のテンソル形式のデータをアノテーションを取得
+        '''
+        im, gt, h, w = self.pull_item(index)
+        return im, gt
+
+    def pull_item(self, index):
+        '''
+        前処理をした画像のテンソル形式のデータ、アノテーション、画像の高さ、幅を取得する
+        '''
+
+        # 1. 画像読み込み
+        image_file_path = self.img_list[index]
+        img = cv2.imread(image_file_path)   # [高さ][幅][色BGR]
+        height, width, channels = img.shape # 画像のサイズを取得
+
+        # 2. xml形式のアノテーション情報をリストに
+        anno_file_path = self.anno_list[index]
+        anno_list = self.transform_anno(anno_file_path, width, height)
+
+        # 3. 前処理を実施
+        img, boxes, labels = self.transform(img, self.phase, anno_list[:, :4], aano_list[:, 4])
+        # 色チャネルの順番がBGRになっているので、RGBに順番変更
+        # さらに（高さ、幅、色チャネル）の順を（色チャネル、高さ、幅）に変換
+        img = torch.from_numpy(img[:, :, (2, 1, 0)]).permute(2, 0, 1)
+
+        # BBoxとラベルをセットにしたnp.arrayを作成、変数名gtがground truth(答え)の略称
+        gt = np.hstach((boxes, np.expand_dims(labels, axis=1)))
+
+        return img, gt, height, width
+        
+# DataLoaderを作成
+def od_collate_fn(batch):
+    """
+    Datasetから取り出すアノテーションデータのサイズが画像ごとに異なる
+    画像内の物体数が2個であれば(2, 5)というサイズだが、3個であれば(3, 5)など変化する
+    この変化に対応したDataLoaderを作成するためにカスタマイズした、Collate_fnを作成する
+    collate_fnは、PyTorchでリストからmini-batchを作成する関数である
+    ミニバッチ分の画像が並んでいるリスト変数batchに、
+    ミニバッチ番号を指定する次元を先頭に1つ追加して、リストの形を変形する
+    """
+
+    targets = []
+    imgs = []
+    for sample in batch:
+        imgs.append(sample[0])  # sample[0]は画像img
+        taegets.append(torch.FloatTensor(sample[1]))    #sample[1]はアノテーションgt
+
+    # imgsはミニバッチサイズのリストになっている
+    # リストの要素はtorch.Size([3, 300, 300])
+    # このリストをtorch.Size([batch_num, 3, 300, 300])のテンソルに変換
+    imgs = torch.stack(imgs, dim=0)
+
+    # targetsはアノテーションデータの正解であるgtのリスト
+    # リストのサイズはミニバッチサイズ
+    # リストtargetsの要素は[n, 5]となっている
+    # nは画像ごとに異なり、画像内にある物体の数となる
+    # 5は[xmin, ymin, xmax, ymax, class_index]
+    
+    return imgs, targets
 
 # ファイルパスのリストを作成
 rootpath = "./data/VOCdeckit/VOC2012/"
@@ -229,3 +320,35 @@ phase = "train"
 img_transformed, boxes, labels = transform(img, phase, anno_list[:, :4], anno_list[:, 4])
 plt.imshow(cv2.cvtColor(img_transformed, cv2.COLOR_BGR2RGB))
 plt.show()
+
+
+# Datasetの動作確認
+color_mean = (104, 117, 123)
+input_size = 300
+
+train_dataset = VOCDataset(train_img_list, train_anno_list, phase='train',
+                           trainsform=DataTransform(input_size, color_mean), transform_anno=Anno_xml2list(voc_classes))
+
+val_dataset = VOCDataset(val_img_list, val_anno_list, phase='val', trainsform=DataTransform(input_size, color_mean), 
+                         transform_anno=Anno_xml2list(voc_classes))
+
+# データの取り出し例
+print(val_dataset.__getitem__(1))
+
+
+# データローダーの作成
+batch_size = 4
+
+train_dataloader = data.Dataloader(train_dataset, batch_size=batch_size, shuffle=True, collate_fn=od_collate_fn)
+
+val_dataloader = data.Dataloader(val_dataset, batch_size=batch_size, shuffle=False, collate_fn=od_collate_fn)
+
+# 辞書型変数にまとめる
+dataloaders_dict = {'train' : train_dataloader, 'val': val_dataloader}
+
+# 動作の確認
+batch_iterator = iter(dataloaders_dict['val'])  # イテレータに変換
+images, targets = next(batch_iterator)  # 1番目の要素を取り出す
+print(images.size())
+print(len(targets))
+print(targets[1].size())    # ミニバッチのサイズのリスト、各要素は[n, 5]、nは物体数
