@@ -232,7 +232,7 @@ class VOCDataset(data.Dataset):
         anno_list = self.transform_anno(anno_file_path, width, height)
 
         # 3. 前処理を実施
-        img, boxes, labels = self.transform(img, self.phase, anno_list[:, :4], aano_list[:, 4])
+        img, boxes, labels = self.transform(img, self.phase, anno_list[:, :4], anno_list[:, 4])
         # 色チャネルの順番がBGRになっているので、RGBに順番変更
         # さらに（高さ、幅、色チャネル）の順を（色チャネル、高さ、幅）に変換
         img = torch.from_numpy(img[:, :, (2, 1, 0)]).permute(2, 0, 1)
@@ -257,11 +257,12 @@ def od_collate_fn(batch):
     imgs = []
     for sample in batch:
         imgs.append(sample[0])  # sample[0]は画像img
-        taegets.append(torch.FloatTensor(sample[1]))    #sample[1]はアノテーションgt
+        targets.append(torch.FloatTensor(sample[1]))    #sample[1]はアノテーションgt
 
     # imgsはミニバッチサイズのリストになっている
     # リストの要素はtorch.Size([3, 300, 300])
     # このリストをtorch.Size([batch_num, 3, 300, 300])のテンソルに変換
+    # torch.stack(imgs, dim=0)により、リストの中に3次元テンソルが格納されている形ではなく、4次元テンソルの変数とする。
     imgs = torch.stack(imgs, dim=0)
 
     # targetsはアノテーションデータの正解であるgtのリスト
