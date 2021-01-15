@@ -1,8 +1,10 @@
 from itertools import product
+from math import sqrt
 
 from torch import nn
 from torch.nn import init
 import torch
+import pandas as pd
 
 # 34層にわたる、vggモジュールを作成
 def make_vgg():
@@ -133,7 +135,7 @@ class DBox(object):
         self.image_size = cfg['input_size'] # 画像サイズの300
         # [38, 19, ...] 各sourceの特徴量マップのサイズ
         self.feature_maps = cfg['feature_maps']
-        self.num_priors = len(cfg['features_maps']) # sourceの個数=6
+        self.num_priors = len(cfg['feature_maps']) # sourceの個数=6
         self.steps = cfg['steps']   # [8, 16, ...] DBoxのピクセルサイズ
         self.min_sizes = cfg['min_sizes']   # [30, 60, ...] 小さい正方形のDBoxのピクセルサイズ
         self.max_sizes = cfg['max_sizes']   # [60, 111, ...] 大きい正方形のDBoxのピクセルサイズ
@@ -157,17 +159,79 @@ class DBox(object):
                 # アスペクト比1の小さいDBox [cx, cy, width, height]
                 # 'min_sizes' : [30, 60, 111, 162, 213, 264]
                 s_k = self.min_sizes[k] / self.image_size
+                mean += [cx, cy, s_k, s_k]
 
+                # アスペクト比1の大きいDBox [cx, cy, width, height]
+                s_k_prime = sqrt(s_k * (self.max_sizes[k] / self.image_size))
+                mean += [cx, cy, s_k_prime, s_k_prime]
 
+                # その他のアスペクト比のDBox [cx, cy, width, height]
+                for ar in self.aspect_ratios[k]:
+                    mean += [cx, cy, s_k*sqrt(ar), s_k/sqrt(ar)]
+                    mean += [cx, cy, s_k/sqrt(ar), s_k*sqrt(ar)]
+                
+        # DBoxをテンソルに変換 torch.Size([8732, 4])
+        output = torch.Tensor(mean).view(-1, 4)
 
- 
+        # DBoxが画像の外にはみ出るのを防ぐため、大きさを最小0、最大1にする
+        output.clamp_(min=0, max=1)
+
+        return output
+                
+# SSDクラスを実装
+class SSD(nn.Module):
+    def __init__(self, phase, cfg):
+        super(SSD, self).__init__()
+
+        self.phase = phase  # train or inferenceを指定
+        self.num_classes = cfg['num_classes']   # クラス数=21
+
+        # SSDネットワークを作る
+        self.vgg = make_vgg()
+        self.extras = make_extras()
+        self.L2Norm = L2Norm()
+        self.loc, self.conf = make_loc_con(self.num_classes, cfg['bbox_aspect_num'])
+
+        # DBox作成
+        dbox = DBox(cfg)
+        self.dbox_list = dbox.make_dbox_list()
+
+        # 推論時はクラス「Detect」を用意
+        if phase == 'inference':
+            self.detect = Detect()
+        
+    
+
 
 # 動作確認
 vgg_test = make_vgg()
-print(vgg_test)
+#print(vgg_test)
 extras_test = make_extras()
-print(extras_test)
+#print(extras_test)
 
 loc_test, conf_test = make_loc_con()
-print(loc_test)
-print(conf_test)
+#print(loc_test)
+#print(conf_test)
+
+# SSD300の設定
+ssd_cfg = {
+    'num_classes' : 21,
+    'input_size' : 300,
+    'bbox_aspect_num' : [4, 6, 6, 6, 4, 4],
+    'feature_maps' : [38, 19, 10, 5, 3, 1],
+    'steps' : [8, 16, 32, 64, 100, 300],
+    'min_sizes' : [30, 60, 111, 162, 213, 264],
+    'max_sizes' : [60, 111, 162, 213, 264, 315],
+    'aspect_ratios' : [[2], [2, 3], [2, 3], [2, 3], [2], [2]],
+}
+
+# DBox作成
+dbox = DBox(ssd_cfg)
+dbox_list = dbox.make_dbox_list()
+
+# DBoxの出力を確認
+pd.DataFrame(dbox_list.numpy())
+
+# 動作確認
+ssd_test = SSD(phase='train', cfg=ssd_cfg)
+print(ssd_test)
