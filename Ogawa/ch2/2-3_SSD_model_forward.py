@@ -8,6 +8,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.nn.init as init
 
+from SSD_modal import make_vgg, make_extras, make_loc_con, L2Norm, DBox
+
 
 # オフセット情報を使い、DBoxをBBoxに変換する関数
 def decode(loc, dbox_list):
@@ -151,5 +153,150 @@ def nm_suppression(boxes, scores, overlap=0.45, top_k=200):
     # whileのループが抜けたら終了
 
     return keep, count
+
+# SSDの推論時にconfとlocの出力から、かぶりを除去したBBoxを出力する
+class Detect(Function):
+
+    def __init__(self, conf_thresh=0.01, top_k=200, nms_thresh=0.45):
+        self.softmax = nn.Softmax(dim=-1)   # confをソフトマックス関数で正規化するために用意　confは[butch_num, 8732, 21]のため、dim=-1にすることでDBoxごとクラスのの確率が求まる
+        self.conf_thresh = conf_thresh      # confがconf_thresh=0.01より高いDBoxのみを扱う
+        self.top_k = top_k                  # nm_supressionでconfの高いtop_k=200個を計算に使用する
+        self.nms_thresh = nms_thresh        # nm_supressionでIOUがnms_thresh=0.45より大きいと同一物体へのBBoxとみなす
+
+    def forward(self, loc_data, conf_data, dbox_list):
+        """
+        順伝播の計算を実行する
+
+        Parameters
+        ----------
+        loc_data : [batch_num, 8732, 4]
+            オフセット情報
+        conf_data : [batch_num, 8732, 21]
+            検出の確信度
+        dbox_list : [8732, 4]
+            DBoxの情報
+        
+        Returns
+        -------
+        output : torch.Size([batch_num, 21, 200, 5])
+            (batch_num, クラス, confのtop200, BBoxの情報)
+        """
+
+        # 各サイズを取得
+        num_batch = loc_data.size(0)    # ミニバッチのサイズ
+        num_dbox = loc_data.size(1)     # DBoxの数 = 8732
+        num_classes = conf_data.size(2) # クラス数 = 21
+
+        # confはソフトマックスを適用して正規化する
+        conf_data = self.softmax(conf_data)
+
+        # 出力の型を作成する。テンソルサイズは[minibatch数, 21, 200, 5]
+        output = torch.zeros(num_batch, num_classes, self.top_k, 5)
+
+        # conf_dataを[batch_num, 8732, num_classes]から[batch_num, num_classes, 8732]に順番変更
+        conf_preds = conf_data.transpose(2, 1)
+
+        # ミニバッチごとのループ
+        for i in range(num_batch):
+
+            # 1. locとDBoxから修正したBBox[xmin, ymin, xmax, ymax]を求める
+            decoded_boxes = decode(loc_data[i], dbox_list)
+
+            # confのコピーを作成
+            conf_scores = conf_preds[i].clone()
+
+            # 画像クラスごとのループ(背景クラスのindexである0は計算せず、index=1から)
+            for cl in range(1, num_classes):
+
+                # 2. confの閾値を超えたBBoxを取り出す
+                # confの閾値を超えているかのマスクを作成し、
+                # 閾値を超えたconfのインデックスをc_maskとして取得
+                c_mask = conf_scores[cl].gt(self.conf_thresh)
+                # gtはGreater thanのこと。gtにより閾値を超えたものが1に、以下が0になる
+                # conf_scores:torch.Size([21, 8732])
+                # c_mask:torch.Size([8732])
+
+                # scoresはtorch.Size([閾値を超えたBBox数])
+                # c_maskでconf_scoresをフィルタリングする
+                scores = conf_scores[cl][c_mask]
+
+                # 閾値を超えたconfがない場合、つまりscores=[]の時はなにもしない
+                if scores.nelement() == 0:  # nelementでそう素数の合計を求める
+                    continue
+
+                # c_maskを、decoded_boxesに適用するようにサイズを変更
+                l_mask = c_mask.unsqueeze(1).expand_as(decoded_boxes)
+                # l_mask:torch.Size([8732, 4])
+
+                # l_maskを、decoded_boxesに適応
+                boxes = decoded_boxes[l_mask].view[-1, 4]
+                # decoded_boxes[l_mask]で1次元になってしまうため、
+                # viewで(閾値を超えたBBox数, 4)サイズに変形しなおす
+
+                # 3. Non-Maximum Suppressionを実施し、かぶっているBBoxを取り除く
+                ids, count = nm_suppression(boxes, scores, self.nms_thresh, self.top_k)
+                # ids : confの降順にNon-Suppressionを通過したindexが格納
+                # count : Non-Maximum Suppressionを通過したBBoxの数
+
+                # outputにNon-Maximum Suppressionを抜けた結果を格納
+                output[i, ck, :count] = torch.cat((scores[ids[:count]].unsqueeze(1), boxes[ids[:count]]), 1)
+
+        return output   # torch.Size([1, 21, 200, 5])
+
+# SSDクラスを作成
+class SSD(nn.Module):
+
+    def __init__(self, phase, cfg):
+        super(SSD, self).__init__()
+
+        self.phase = phase
+        self.num_classes = cfg['num_classes']   # クラス数=21
+
+        # SSDのネットワークを作る
+        self.vgg = make_vgg()
+        self.extras = make_extras()
+        self.L2Norm = L2Norm()
+        self.loc, self.conf = make_loc_con(cfg['num_classes'], cfg['bbox_aspect_num'])
+
+        # DBox作成
+        dbox = DBox(cfg)
+        self.dbox_list = dbox.make_dbox_list
+
+        # 推論時はクラス「Detext」を用意する
+        if phase == 'inference':
+            self.detect = Detect()
+        
+    def forward(self, x):
+        sources = list() # locとconfへの入力source1~6を格納
+        loc = list()    # locの出力を格納
+        conf = list()   # confの出力を格納
+
+        # vggのconv4_3まで計算する
+        for k in range(23):
+            x = self.vgg[k](x)
+        
+        # conv4_3の出力をL2Normに入力し、source1を作成、sourcesに追加
+        source1 = self.L2Norm(x)
+        sources.append(source1)
+
+        # vggを最後まで計算し、source2を作成、sourcesに追加
+        for k in range(23, len(self.vgg)):
+            x = self.vgg[k](x)
+
+        sources.append(x)
+
+        # extrasのconvとReLUを計算
+        # source3~6を、sourcesに追加
+        for k, v in enumerate(self.extras):
+            x = F.relu(v(x), inplace=True)  # inplace=Trueにすることでメモリ節約
+            if k % 2 == 1:  # conv -> ReLU -> conv -> Reluをしたらsourceにいれる
+                sources.append(x)
+
+        # source1~6に、それぞれ対応する畳み込みを1回ずつ適用する
+        # zipでforループの複数のリストの要素を取得
+        # source1~6まであるので、6回ループが回る
+        for (x, l, c) in zip(sources, self.loc, self.conf):
+            # Permuteは要素の順番を入れ替え
+
 
 
