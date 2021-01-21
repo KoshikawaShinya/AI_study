@@ -297,6 +297,41 @@ class SSD(nn.Module):
         # source1~6まであるので、6回ループが回る
         for (x, l, c) in zip(sources, self.loc, self.conf):
             # Permuteは要素の順番を入れ替え
+            loc.append(l(x).permute(0, 2, 3, 1).contiguous())
+            conf.append(c(x).permute(0, 2, 3, 1).contiguous())
+            # l(x)とc(x)で畳み込みを実行
+            # l(x)とc(x)の出力サイズは[batch_num, 4*アスペクト比の種類数, featuremapの高さ, featuremapの幅]
+            # sourceによって、アスペクト比の種類数が異なり、面倒なので順番を入れ替えて整える
+            # permuteで要素の順番を入れ替え
+            # [minibatch数, featuremap数, featuremap数, 4*アスペクト比の種類数]へ
+            # (注釈)
+            # torch.contiguous()はメモリ上で要素を連続的に配列しなおす命令
+            # 後でview関数を使用する
+            # このviewを行うためには、対象の変数がメモリ上で連続配置されている必要がある
+
+        # さらにlocとconfの形を変形
+        # locのサイズは、torch.Size([batch_num, 34928])
+        # confのサイズは、torch.Size([batch_num, 183372])になる
+        loc = torch.cat([o.view(o.size(0), -1) for o in loc], 1)
+        conf = torch.cat([o.view(o.size(0), -1) for o in conf], 1)
+
+        # さらにlocとconfの形を整える
+        # locのサイズは、torch.Size([batch_num, 8732, 4])
+        # confのサイズは、torch.Size([batch_num, 8732, 21])
+        loc = loc.view(loc.size(0), -1, 4)
+        conf = conf.view(conf.size(0), -1, self.num_classes)
+
+        # 最後に出力
+        output = (loc, conf, self.dbox_list)
+
+        if self.phase == 'inference':   # 推論時
+            # クラス「Detect」のforwardを実行
+            # 返り血のサイズはtorch.Size([batch_num, 21, 200, 5])
+            return self.detect(output[0], output[1], output[2])
+        
+        else:   # 学習時
+            return output
+            # 返り値は(loc, conf, dbox_list)のタプル
 
 
 
