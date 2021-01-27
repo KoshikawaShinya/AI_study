@@ -1,7 +1,8 @@
 import os.path as osp
 from PIL import Image
-
 import torch.utils.data as data
+
+from utils.data_augumentation import Compose, Scale, RandomRotation, RandomMirror, Resize, Normalize_Tensor
 
 def make_datapath_list(rootpath):
     """
@@ -50,7 +51,128 @@ def make_datapath_list(rootpath):
     
     return train_img_list, train_anno_list, val_img_list, val_anno_list
 
-# 動作確認
+class DataTransform():
+    """
+    画像とアノテーションの前処理クラス。訓練時と検証時で異なる動作をする。
+    画像のサイズをinput_size x input_sizeにする。
+    訓練時はデータオーギュメンテーションする。
+
+    Attributes
+    ----------
+    input_size : int
+        リサイズ先の画像の大きさ
+    color_mean : (R, G, B)
+        各色チャネルの平均値
+    color_std : (R, G, B)
+        各色チャネルの標準偏差
+    """
+
+    def __init__(self, input_size, color_mean, color_std):
+        self.data_transform = {
+            'train' : Compose([
+                Scale(scale=[0.5, 1.5]),            # 画像の拡大
+                RandomRotation(angle=[-10, 10]),    # 回転
+                RandomMirror(),                     # ランダムミラー
+                Resize(input_size),                 # リサイズ(input_size)
+                Normalize_Tensor(color_mean, color_std) # 色情報の標準化とテンソル化
+            ]),
+            'val' : Compose([
+                Resize(input_size),                 # リサイズ(input_size)
+                Normalize_Tensor(color_mean, color_std) # 色情報の標準化とテンソル化
+            ])
+        }
+
+    def __call__(self, phase, img, anno_class_img):
+        """
+        Parameters
+        ----------
+        phase : 'train' or 'val'
+            前処理のモードを指定
+        """
+
+        return self.data_transform[phase](img, anno_class_img)
+
+class VOCDataset(data.Dataset):
+    """
+    VOC2012のDatasetを作成するクラス。PyTorchのDatasetクラスを継承
+
+    Attributes
+    ----------
+    img_list : リスト
+        画像のパスを格納したリスト
+    anno_list : リスト
+        アノテーションへのパスを格納したリスト
+    phase : 'train' or 'val'
+        学習か訓練かを設定
+    transform : object
+        前処理クラスのインスタンス
+    """
+
+    def __init__(self, img_list, anno_list, phase, transform):
+        self.img_list = img_list
+        self.anno_list = anno_list
+        self.phase = phase
+        self.transform = transform
+
+    def __len__(self):
+        '''画像の枚数を返す'''
+        return len(self.img_list)
+
+    def __getitem__(self, index):
+        '''
+        前処理をした画像のTensor形式のデータとアノテーションを取得
+        '''
+        img, anno_class_img = self.pull_item(index)
+        return img, anno_class_img
+    
+    def pull_item(self, index):
+        '''画像のTensor形式のデータ、アノテーションを取得する'''
+
+        # 1. 画像読み込み
+        image_file_path = self.img_list[index]
+        img = Image.open(image_file_path)   # [高さ][幅][色RGB]
+
+        # 2. アノテーション画像の読み込み
+        anno_file_path = self.anno_list[index]
+        anno_class_img = Image.open(anno_file_path)   # [高さ][幅]
+
+        # 3. 前処理を実施
+        img, anno_class_img = self.transform(self.phase, img, anno_class_img)
+
+
+
+
+# make_datapath_listの動作確認
 rootpath = './data/VOCdevkit/VOC2012/'
 train_img_list, train_anno_list, val_img_list, val_anno_list = make_datapath_list(rootpath)
 
+# Datasetの動作確認
+
+# (RGB)の色の平均値と標準偏差
+color_mean = (0.485, 0.456, 0.406)
+color_std = (0.229, 0.224, 0.225)
+
+# データセット作成
+transform = DataTransform(input_size=475, color_mean=color_mean, color_std=color_std)
+train_dataset = VOCDataset(train_img_list, train_anno_list, phase='train', transform=transform)
+val_dataset = VOCDataset(val_img_list, val_anno_list, phase='val', transform=transform)
+
+# データの取り出し例
+print(val_dataset.__getitem__(0)[0].shape)
+print(val_dataset.__getitem__(0)[1].shape)
+print(val_dataset.__getitem__(0))
+
+# データローダーの作成
+batch_size = 8
+
+train_dataloader = data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+val_dataloader = data.DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+
+# 辞書オブジェクトにまとめる
+dataloaders_dict = {'train' : train_dataloader, 'val' : val_dataloader}
+
+# dataloaderの動作確認
+batch_iterator = iter(dataloaders_dict['val'])      # イテレータに変換
+images, anno_class_images = next(batch_iterator)    # 1番目の要素を取り出す
+print(images.size())            # torch.Size([8, 3, 475, 475])
+print(anno_class_images.size()) # torch.Size([8, 475, 475])
