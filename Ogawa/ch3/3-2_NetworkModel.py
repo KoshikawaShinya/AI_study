@@ -161,3 +161,97 @@ class bottleNeckIdentifyPSP(nn.Module):
 
         return self.relu(conv + residual)
 
+# PyramidPooling層
+class PyramidPooling(nn.Module):
+    def __init__(self, in_channels, pool_sizes, height, width):
+        super(PyramidPooling, self).__init__()
+
+        # forwardで使用する画像サイズ
+        self.height = height
+        self.width = width
+
+        # 各畳み込み層の出力チャネル数
+        out_channels = int(in_channels / len(pool_sizes))
+        # out_channels = 512
+
+        # 各畳み込み層を作成
+        # この実装方法はfor文で書くことが可能だが、分かりやすさを優先する
+        # pool_sizes = [6, 3, 2, 1]
+
+        self.avgpool_1 = nn.AdaptiveAvgPool2d(output_size=pool_sizes[0])
+        self.cbr_1 = conv2DBatchNormRelu(in_channels, out_channels, kernel_size=1, stride=1, padding=0, dilation=1, bias=False)
+
+        self.avgpool_2 = nn.AdaptiveAvgPool2d(output_size=pool_sizes[1])
+        self.cbr_2 = conv2DBatchNormRelu(in_channels, out_channels, kernel_size=1, stride=1, padding=0, dilation=1, bias=False)
+
+        self.avgpool_3 = nn.AdaptiveAvgPool2d(output_size=pool_sizes[2])
+        self.cbr_3 = conv2DBatchNormRelu(in_channels, out_channels, kernel_size=1, stride=1, padding=0, dilation=1, bias=False)
+
+        self.avgpool_4 = nn.AdaptiveAvgPool2d(output_size=pool_sizes[3])
+        self.cbr_4 = conv2DBatchNormRelu(in_channels, out_channels, kernel_size=1, stride=1, padding=0, dilation=1, bias=False)
+
+    def forward(self, x):
+        
+        # F.interpolateでは、sizeで指定した値に画像の大きさ(4次元テンソルの3、4次元目)を拡大する
+        # bilinearでupsamplingする。双一次補間ともいう
+        out1 = self.cbr_1(self.avgpool_1(x))
+        out1 = F.interpolate(out1, size=(self.height, self.width), mode='bilinear', align_corners=True)
+
+        out2 = self.cbr_2(self.avgpool_2(x))
+        out2 = F.interpolate(out2, size=(self.height, self.width), mode='bilinear', align_corners=True)
+
+        out3 = self.cbr_3(self.avgpool_3(x))
+        out3 = F.interpolate(out3, size=(self.height, self.width), mode='bilinear', align_corners=True)
+
+        out4 = self.cbr_4(self.avgpool_4(x))
+        out4 = F.interpolate(out4, size=(self.height, self.width), mode='bilinear', align_corners=True)
+
+        # 最終的に結合させる、dim=1でチャネル数の次元で結合
+        output = torch.cat([x, out1, out2, out3, out4], dim=1)
+        # torch.Size([batch_size, 4096, self.height, self.width])
+
+        return output
+
+class DecodePSPFeature(nn.Module):
+    def __init__(self, height, width, n_classes):
+        super(DecodePSPFeature, self).__init__()
+
+        # forwardで使用する画像サイズ
+        self.height = height
+        self.width = width
+
+        self.cbr = conv2DBatchNormRelu(in_channels=4096, out_channels=512, kernel_size=3, stride=1, padding=1, dilation=1, bias=False)
+        self.dropout = nn.Dropout2d(p=0.1)
+        self.classification = nn.Conv2d(in_channels=512, out_channels=n_classes, kernel_size=1, stride=1, padding=0)
+
+    def forward(self, x):
+        x = self.cbr(x)
+        x = self.dropout(x)
+        x = self.classification(x)
+        output = F.interpolate(x, size=(self.height, self.width), mode='bilinear', align_corners=True)
+
+        return output
+
+class AuxiliaryPSPlayers(nn.Module):
+    def __init__(self, in_channels, height, width, n_classes):
+        super(AuxiliaryPSPlayers, self).__init__()
+
+        # forwardで使用する画像サイズ
+        self.height = height
+        self.width = width
+
+        self.cbr = conv2DBatchNormRelu(in_channels=in_channels, out_channels=256, kernel_size=3, stride=1, padding=1, dilation=1, bias=False)
+        self.dropout = nn.Dropout2d(p=0.1)
+        self.classification = nn.Conv2d(in_channels=256, out_channels=n_classes, kernel_size=1, stride=1, padding=0)
+
+    def forward(self, x):
+        x = self.cbr(x)
+        x = self.dropout(x)
+        x = self.classification(x)
+        output = F.interpolate(x, size=(self.height, self.width), mode='bilinear', align_corners=True)
+
+        return output
+    
+
+net = PSPNet(n_classes=21)
+print(net)
