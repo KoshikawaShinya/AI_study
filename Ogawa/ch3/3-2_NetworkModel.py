@@ -136,7 +136,7 @@ class bottleNeckPSP(nn.Module):
         self.cb_3 = conv2DBatchNorm(mid_channels, out_channels, kernel_size=1, stride=1, padding=0, dilation=1, bias=False)
 
         # スキップ結合
-        self.cb_residual = conv2DBatchNorm(in_channels, out_channels, kernel_size=1, stride=1, padding=0, dilation=1, bias=False)
+        self.cb_residual = conv2DBatchNorm(in_channels, out_channels, kernel_size=1, stride=stride, padding=0, dilation=1, bias=False)
 
         self.relu = nn.ReLU(inplace=True)
 
@@ -255,3 +255,11 @@ class AuxiliaryPSPlayers(nn.Module):
 
 net = PSPNet(n_classes=21)
 print(net)
+
+# ダミーデータの作成
+batch_size = 2
+dummy_img = torch.rand(batch_size, 3, 475, 475)
+
+# 計算
+outputs = net(dummy_img)
+print(outputs)
