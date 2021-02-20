@@ -303,9 +303,6 @@ D.apply(weights_init)
 
 print('ネットワークの初期化完了')
 
-
-# 入力する乱数
-input_z = torch.randn(1, 20)
-# テンソルサイズを(1, 20, 1, 1)に変形
-input_z = input_z.view(input_z.size(0), input_z.size(1), 1, 1)
+num_epochs = 10
+G_update, D_update = train_model(G, D, dataloader=train_dataloader, num_epochs=num_epochs)
 
