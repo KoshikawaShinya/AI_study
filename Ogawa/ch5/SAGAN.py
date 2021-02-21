@@ -201,5 +201,177 @@ class Discriminator(nn.Module):
         out = self.last(out)
         
         return out, attention_map1, attention_map2
-    
+
+def train_model(G, D, dataloader, num_epochs):
+
+    # GPUが使えるか確認
+    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+    print('使用デバイス : ', device)
+
+    # 最適化手法の設定
+    g_lr, d_lr = 0.0001, 0.0004
+    beta1, beta2 = 0.0, 0.9
+    g_optimizer = torch.optim.Adam(G.parameters(), g_lr, [beta1, beta2])
+    d_optimizer = torch.optim.Adam(D.parameters(), d_lr, [beta1, beta2])
+
+    # 誤差関数を定義 -> hinge version of adversarial loss に変更
+    # criterion = nn.BCEWithLogitsLoss(reduction='mean')
+
+    # パラメータをハードコーディング
+    z_dim = 20
+    mini_batch_size = 64
+
+    # ネットワークをGPUへ
+    G.to(device)
+    D.to(device)
+
+    # ネットワークをGPUへ
+    G.train()
+    D.train()
+
+    # ネットワークがある程度固定であれば高速化
+    torch.backends.cudnn.benchmark = True
+
+    # 画像の枚数
+    num_train_imgs = len(dataloader.dataset)
+    batch_size = dataloader.batch_size
+
+    # イテレーションカウンタをセット
+    iteration = 1
+    logs = []
+
+    # epochのループ
+    for epoch in range(num_epochs):
+
+        # 開始時刻を保存
+        t_epoch_start = time.time()
+        epoch_g_loss = 0.0  # epochの損失和
+        epoch_d_loss = 0.0  # epochの損失和
+
+        print('----------------')
+        print('Epoch {}/{}'.format(epoch, num_epochs))
+        print('----------------')
+        print(' (train) ')
+
+        # データローダーからminibatchずつ取り出すループ
+        for images in dataloader:
+
+            # ----------------------
+            # 1. Discriminatorの学習
+            # ----------------------
+            # ミニバッチがサイズ1だと、バッチノーマライゼーションでエラーになるので、避ける
+            if images.size()[0] == 1:
+                continue
+
+            # GPUが使えるならGPUにデータを送る
+            images = images.to(device)
+
+            # 正解ラベルと偽ラベルを作成
+            # epochの最後のイテレーションはミニバッチの数が少なくなる
+            mini_batch_size = images.size()[0]
+            
+            # 真の画像を判定
+            d_out_real, _, _ = D(images)
+
+            # 偽の画像を生成して判定
+            input_z = torch.randn(mini_batch_size, z_dim).to(device)
+            input_z = input_z.view(input_z.size(0), input_z.size(1), 1, 1)
+            fake_images, _, _ = G(input_z)
+            d_out_fake, _, _ = D(fake_images)
+
+            # 誤差を計算 => hinge version of the adversarial loss に変更
+            d_loss_real = nn.ReLU()(1.0 - d_out_real).mean()
+            # 誤差 d_out_realが1以上で誤差が0になる。
+            # d_out_real > 1 で、1.0 - d_out_realが負の場合ReLUで0にする
+
+            d_loss_fake = nn.ReLU()(1.0 + d_out_fake).mean()
+            # 誤差 d_out_fakeが-1以下なら誤差0になる。
+            # d_out_fake < -1 で、1.0 + d_out_realが負の場合ReLUで0にする
+
+            d_loss = d_loss_real + d_loss_fake
+
+            # バックプロパゲーション
+            g_optimizer.zero_grad()
+            d_optimizer.zero_grad()
+
+            d_loss.backward()
+            d_optimizer.step()
+
+            # ------------------
+            # 2. Generatorの学習
+            # ------------------
+            # 偽の画僧を生成して判定
+            input_z = torch.randn(mini_batch_size, z_dim).to(device)
+            input_z = input_z.view(input_z.size(0), input_z.size(1), 1, 1)
+            fake_images, _, _ = G(input_z)
+            d_out_fake, _, _ = D(fake_images)
+
+            # 誤差を計算 -> hinge version of the adversarial lossに変更
+            g_loss = d_out_fake.mean()
+
+            # バックプロパゲーション
+            g_optimizer.zero_grad()
+            d_optimizer.zero_grad()
+            g_loss.backward()
+            g_optimizer.step()
+
+            # ------------------
+            # 3. 記録
+            # ------------------
+            epoch_d_loss += d_loss.item()
+            epoch_g_loss += g_loss.item()
+            iteration += 1
+
+        # epochのphaseごとのlossと正解率
+        t_epoch_finish = time.time()
+        t_epoch_finish = time.time()
+        print('-------------')
+        print('epoch {} || Epoch_D_Loss:{:.4f} || Epoch_G_Loss:{:.4f}'.format(epoch, epoch_d_loss/batch_size, epoch_g_loss/batch_size))
+        print('timer : {:.4f} sec.'.format(t_epoch_finish - t_epoch_start))
+        t_epoch_start = time.time()
+
+    # print('総イテレーション回数 : ', iteration)
+
+    return G, D
+
+# ネットワークの初期化
+def weights_init(m):
+    classname = m.__class__.__name__
+    if classname.find('Conv') != -1:
+        # Conv2dとConvTranspose2dの初期化
+        nn.init.normal_(m.weight.data, 0.0, 0.2)
+        nn.init.constant_(m.bias.data, 0)
+    elif classname.find('BatchNorm') != -1:
+        # BatchNorm2dの初期化
+        nn.init.normal_(m.weight.data, 1.0, 0.02)
+        nn.init.constant_(m.bias,data, 0)
+
+
+# ファイルリストを作成
+train_img_list = make_datapath_list()
+
+# Datasetを作成
+mean = (0.5,)
+std = (0.5,)
+transform = ImageTrandform(mean, std)
+train_dataset = GAN_Img_Dataset(train_img_list, transform=transform)
+
+# Dataloaderを作成
+batch_size = 64
+train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+
+
+# 動作確認
+G = Generator(z_dim=20, image_size=64)
+D = Discriminator(z_dim=20, image_size=64)
+
+# 初期化の実施
+G.apply(weights_init)
+D.apply(weights_init)
+
+print('ネットワークの初期化完了')
+
+num_epochs = 10
+G_update, D_update = train_model(G, D, dataloader=train_dataloader, num_epochs=num_epochs)
+
 
