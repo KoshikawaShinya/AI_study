@@ -16,7 +16,7 @@ def get_IMDb_DataLoaders_and_TEXT(max_length=256, batch_size=24):
     """IMDbのDataLoaderとTEXTオブジェクトを取得する。 """
 
     # 訓練データのtsvファイルを作成します
-    f = open('./data/IMDb_train.tsv', 'w')
+    f = open('./data/IMDb_train.tsv', 'w', encoding="utf-8")
 
     path = './data/aclImdb/train/pos/'
     for fname in glob.glob(os.path.join(path, '*.txt')):
@@ -43,7 +43,7 @@ def get_IMDb_DataLoaders_and_TEXT(max_length=256, batch_size=24):
     f.close()
 
    # テストデータの作成
-    f = open('./data/IMDb_test.tsv', 'w')
+    f = open('./data/IMDb_test.tsv', 'w', encoding="utf-8")
 
     path = './data/aclImdb/test/pos/'
     for fname in glob.glob(os.path.join(path, '*.txt')):
