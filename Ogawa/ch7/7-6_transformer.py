@@ -111,7 +111,7 @@ class FeedForward(nn.Module):
         x = self.linear_2(x)
         return x
     
-class TransfomerBlock(nn.Module):
+class TransformerBlock(nn.Module):
 
     def __init__(self, d_model, dropout=0.1):
         super().__init__()
@@ -143,6 +143,48 @@ class TransfomerBlock(nn.Module):
 
         return output, normalized_weights
 
+class ClassificationHead(nn.Module):
+    '''Transformer_Blockの出力を使用し、最後にクラス分類させる'''
+
+    def __init__(self, d_model=300, output_dim=2):
+        super().__init__()
+
+        # 全結合層
+        self.linear = nn.Linear(d_model, output_dim)    # output_dimはポジ、ネガの２つ
+
+        # 重み初期化処理
+        nn.init.normal_(self.linear.weight, std=0.02)
+        nn.init.normal_(self.linear.bias, 0)
+
+    def forward(self, x):
+        x0 = x[:, 0, :]     # 各ミニバッチの各分の先頭の単語の特徴量(300次元)を取り出す
+        out = self.linear(x0)
+
+        return out
+
+# 最終的なTransformerモデルのクラス
+class TransformerClassification(nn.Module):
+    '''Transformerでクラス分類させる'''
+
+    def __init__(self, text_embedding_vectors, d_model=300, max_seq_len=256, output_dim=2):
+        super().__init__()
+
+        # モデル構築
+        self.net1 = Embedder(text_embedding_vectors)
+        self.net2 = PositionalEncoder(d_model=d_model, max_seq_len=max_seq_len)
+        self.net3_1 = TransformerBlock(d_model=d_model)
+        self.net3_2 = TransformerBlock(d_model=d_model)
+        self.net4 = ClassificationHead(output_dim=output_dim, d_model=d_model)
+
+    def forward(self, x, mask):
+        x1 = self.net1(x)                                   # 単語をベクトルに
+        x2 = self.net2(x1)                                  # Position情報を足し算
+        x3_1, normalized_weights_1 = self.net3_1(x2, mask)  # Self-Attentionで特徴量を変換
+        x3_2, normalized_weights_2 = self.net3_2(x3_1, mask)# Self-Attentionで特徴量を変換
+        x4 = self.net4(x3_2)                                # 最終出力の0単語目を使用して、分類0-1のスカラーを出力
+
+        return x4, normalized_weights_1, normalized_weights_2
+
 
 # 動作確認
 train_dl, val_dl, test_dl, TEXT = get_IMDb_DataLoaders_and_TEXT(max_length=256, batch_size=24)
@@ -151,22 +193,17 @@ train_dl, val_dl, test_dl, TEXT = get_IMDb_DataLoaders_and_TEXT(max_length=256, 
 batch = next(iter(train_dl))
 
 # モデル構築
-net1 = Embedder(TEXT.vocab.vectors)
-net2 = PositionalEncoder(d_model=300, max_seq_len=256)
-net3 = TransformerBlock(d_model=300)
+net = TransformerClassification(text_embedding_vectors=TEXT.vocab.vectors, d_model=300, max_seq_len=256, output_dim=2)
 
 # maskの作成
-x = batch.TEXT[0]
+x = batch.Text[0]
 input_pad = 1   # 単語のIDにおいて、'<pad>' : 1 のため
 input_mask = (x != input_pad)
 print(input_mask[0])
 
 # 入出力
-x = batch.Text[0]
-x1 = net1(x)
-x2 = net2(x1)
-x3, normalized_weights = net3(x2, input_mask)   # Self-Attentionで特徴量を変換
+out, normalized_weights_1, normalized_weights_2 = net(x, input_mask)
 
-print('入力のテンソルサイズ : ', x2.shape)
-print('出力のテンソルサイズ : ', x3.shape)
-print('Attentionのサイズ : ', normalized_weights.shape)
+print('出力のテンソルサイズ : ', out.shape)
+print('出力テンソルのsigmoid : ', F.softmax(out, dim=1))
+
