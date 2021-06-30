@@ -104,3 +104,5 @@ def train_model(net, dataloaders_dict, criterion, optimizer, num_epochs):
             print('Epoch {}/{} | {:^5} | Loss : {:.4f} Acc : {:.4f}'.format(epoch+1, num_epochs, phase, epoch_loss, epoch_acc))
 
     return net
+
+
